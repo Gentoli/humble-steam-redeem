@@ -9,9 +9,11 @@ import src.chooser as chooser
 import src.__main__ as app
 from src.humble_api import (
     HUMBLE_CHOOSE_CONTENT,
+    HUMBLE_HEADERS,
     HUMBLE_ORDER_DETAILS_API,
     HUMBLE_SUB_PAGE,
     get_choices,
+    redeem_humble_key,
 )
 
 
@@ -360,6 +362,34 @@ def test_choose_games_does_not_reuse_mutated_headers():
     assert failed == ["First Game"]
     assert requests[0] is not requests[1]
     assert "Injected-Header" not in requests[1]
+
+
+def test_redeem_humble_key_copies_shared_headers():
+    original_headers = HUMBLE_HEADERS.copy()
+    requests = []
+
+    class _Response:
+        status_code = 200
+
+        def json(self):
+            return {"success": True, "key": "steam-key"}
+
+    class _Session:
+        def post(self, url, *, data, headers):
+            requests.append(headers)
+            headers["Injected-Header"] = "unexpected"
+            return _Response()
+
+    tpk = {
+        "machine_name": "future_game_steam",
+        "gamekey": "game-key",
+        "keyindex": 0,
+        "human_name": "Future Game",
+    }
+
+    assert redeem_humble_key(_Session(), tpk) == "steam-key"
+    assert requests[0] is not HUMBLE_HEADERS
+    assert HUMBLE_HEADERS == original_headers
 
 
 def test_choose_games_marks_non_json_response_as_failed():
