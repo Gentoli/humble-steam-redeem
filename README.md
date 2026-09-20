@@ -134,7 +134,7 @@ Redeem new keys every 6 hours:
 | `--reveal-all` | With `--auto`: reveal and redeem unrevealed keys even without ownership data. By default, `--auto` only redeems already-revealed keys to preserve gift links for games you might want to give away. Use this flag if you don't care about gift links and want everything redeemed. |
 | `--humble-cookies-file PATH` | Use a Netscape-format cookies.txt file for Humble instead of logging in. |
 | `--steam-cookies-file PATH` | Use a Netscape-format cookies.txt file for Steam instead of logging in. |
-| `--only-expiring` | Export or auto-redeem only games with a Humble expiry date. |
+| `--only-expiring` | Export, auto-redeem, or choose only games with an unexpired Humble expiry date. |
 
 ## Portable Binary
 
