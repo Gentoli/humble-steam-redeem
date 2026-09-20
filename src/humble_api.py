@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import Any, Generator
 
 from rich.prompt import Prompt
@@ -14,6 +15,7 @@ from src.utils import (
     console,
     export_cookies,
     find_dict_keys,
+    import_cookies,
     print_error,
     print_rule,
     try_recover_cookies,
@@ -43,9 +45,26 @@ HUMBLE_HEADERS: dict[str, str] = {
 }
 
 
-def humble_login(session, *, auto: bool = False) -> bool:
+def humble_login(
+    session,
+    *,
+    auto: bool = False,
+    cookies_file: str | Path | None = None,
+) -> bool:
     """Log into Humble Bundle. Updates *session* in place. Returns True on success."""
     cls()
+
+    if cookies_file is not None:
+        if not import_cookies(cookies_file, session, ".humblebundle.com"):
+            print_error(f"Couldn't load Humble cookies from {cookies_file}")
+            sys.exit(1)
+        if not verify_logins_session(session)[0]:
+            print_error("Humble cookies are invalid or expired.")
+            sys.exit(1)
+        csrf_cookie = session.cookies.get_dict().get("csrf_cookie")
+        if csrf_cookie:
+            HUMBLE_HEADERS["CSRF-Prevention-Token"] = csrf_cookie
+        return True
 
     # Attempt to use saved session
     if (
