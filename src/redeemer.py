@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Any
 
 from rich import box
@@ -165,9 +166,10 @@ def redeem_steam_keys(
     *,
     auto: bool = False,
     reveal_all: bool = False,
+    steam_cookies: str | Path | None = None,
 ) -> None:
     """Full auto-redeem pipeline: Steam login, ownership check, redeem with rate-limit handling."""
-    session = steam_login(auto=auto)
+    session = steam_login(auto=auto, cookies_file=steam_cookies)
 
     print_success("Successfully signed in on Steam.")
     print_info(

@@ -18,6 +18,7 @@ from src.utils import (
     import_cookies,
     print_error,
     print_rule,
+    print_warning,
     try_recover_cookies,
     verify_logins_session,
 )
@@ -184,6 +185,69 @@ def get_month_data(humble_session, month: dict) -> dict:
         )
     json_text = r.text.split(data_indicator)[1].split("</script>")[0].strip()
     return json.loads(json_text)["contentChoiceOptions"]
+
+
+_EXPIRATION_FIELD = "expiration_date|datetime"
+_EXPIRY_IDENTIFIER_FIELDS = (
+    "machine_name",
+    "gamekey",
+    "steam_app_id",
+    "human_name",
+    "display_item_machine_name",
+)
+
+
+def get_expiring_game_identifiers(
+    humble_session, order_details: list[dict]
+) -> dict[str, set[str]]:
+    """Fetch Choice pages and collect identifiers for games with an expiry date."""
+    identifiers = {field: set() for field in _EXPIRY_IDENTIFIER_FIELDS}
+    choice_urls = {
+        order.get("product", {}).get("choice_url")
+        for order in order_details
+        if order.get("product", {}).get("choice_url")
+    }
+
+    for choice_url in choice_urls:
+        try:
+            choice_data = get_month_data(
+                humble_session, {"product": {"choice_url": choice_url}}
+            )
+        except Exception as exc:
+            print_warning(f"Couldn't check expiry for {choice_url}: {exc}")
+            continue
+
+        for game in find_dict_keys(choice_data, _EXPIRATION_FIELD, parent=True):
+            if not isinstance(game, dict) or not game.get(_EXPIRATION_FIELD):
+                continue
+            for field in _EXPIRY_IDENTIFIER_FIELDS:
+                value = game.get(field)
+                if value is not None:
+                    identifiers[field].add(str(value).strip().casefold())
+
+    return identifiers
+
+
+def filter_expiring_keys(
+    humble_session, order_details: list[dict], keys: list[dict]
+) -> list[dict]:
+    """Return only keys whose Humble Choice data includes an expiry date."""
+    identifiers = get_expiring_game_identifiers(humble_session, order_details)
+    expiring_keys: list[dict] = []
+
+    for key in keys:
+        if key.get(_EXPIRATION_FIELD):
+            expiring_keys.append(key)
+            continue
+        if any(
+            value is not None
+            and str(value).strip().casefold() in identifiers[field]
+            for field in _EXPIRY_IDENTIFIER_FIELDS
+            for value in [key.get(field)]
+        ):
+            expiring_keys.append(key)
+
+    return expiring_keys
 
 
 def get_choices(

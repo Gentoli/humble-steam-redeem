@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 from InquirerPy import inquirer
@@ -17,6 +18,7 @@ from src.humble_api import (
     HUMBLE_HEADERS,
     HUMBLE_ORDER_DETAILS_API,
     HUMBLE_SUB_PAGE,
+    filter_expiring_keys,
     get_choices,
 )
 from src.redeemer import redeem_steam_keys
@@ -95,7 +97,11 @@ def choose_games(
 
 
 def humble_chooser_mode(
-    humble_session, order_details: list[dict[str, Any]]
+    humble_session,
+    order_details: list[dict[str, Any]],
+    *,
+    steam_cookies: str | Path | None = None,
+    only_expiring: bool = False,
 ) -> None:
     """Interactive Humble Choice game selection UI."""
     try_redeem_keys: list[str] = []
@@ -240,4 +246,13 @@ def humble_chooser_mode(
             chosen_keys = list(
                 find_dict_keys(updated_monthlies, "steam_app_id", True)
             )
-            redeem_steam_keys(humble_session, chosen_keys)
+            if only_expiring:
+                original_length = len(chosen_keys)
+                chosen_keys = filter_expiring_keys(
+                    humble_session, updated_monthlies, chosen_keys
+                )
+                print_info(
+                    f"Filtered {original_length - len(chosen_keys)} keys without "
+                    "an expiry date"
+                )
+            redeem_steam_keys(humble_session, chosen_keys, steam_cookies=steam_cookies)

@@ -6,13 +6,18 @@ import argparse
 import sys
 import time
 from concurrent.futures import as_completed
+from pathlib import Path
 
 import cloudscraper
 from requests_futures.sessions import FuturesSession
 
 from src.chooser import humble_chooser_mode
 from src.export import export_mode
-from src.humble_api import HUMBLE_ORDER_DETAILS_API, HUMBLE_ORDERS_API
+from src.humble_api import (
+    HUMBLE_ORDER_DETAILS_API,
+    HUMBLE_ORDERS_API,
+    filter_expiring_keys,
+)
 from src.redeemer import redeem_steam_keys
 from src.utils import (
     console,
@@ -51,6 +56,27 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="With --auto: reveal and redeem unrevealed keys even without "
         "ownership data. Default is to skip unrevealed keys to preserve gift links.",
+    )
+    parser.add_argument(
+        "--humble-cookies-file",
+        "--humble-cookies",
+        dest="humble_cookies",
+        type=Path,
+        help="Load Netscape cookies.txt for .humblebundle.com instead of logging in.",
+    )
+    parser.add_argument(
+        "--steam-cookies-file",
+        "--steam-cookies",
+        dest="steam_cookies",
+        type=Path,
+        help="Load Netscape cookies.txt for store.steampowered.com instead of logging in.",
+    )
+    parser.add_argument(
+        "--only-expiring",
+        "--expiring",
+        dest="only_expiring",
+        action="store_true",
+        help="Only export or auto-redeem games with a Humble expiry date.",
     )
     return parser.parse_args(argv)
 
@@ -115,7 +141,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Create a consistent session for Humble API use
     humble_session = cloudscraper.CloudScraper()
-    humble_login(humble_session, auto=args.auto)
+    humble_login(humble_session, auto=args.auto, cookies_file=args.humble_cookies)
     print_success("Successfully signed in on Humble.")
 
     orders = humble_session.get(HUMBLE_ORDERS_API).json()
@@ -136,10 +162,20 @@ def main(argv: list[str] | None = None) -> None:
     if not args.auto:
         desired_mode = prompt_mode()
         if desired_mode == "2":
-            export_mode(humble_session, order_details)
+            export_mode(
+                humble_session,
+                order_details,
+                steam_cookies=args.steam_cookies,
+                only_expiring=args.only_expiring,
+            )
             sys.exit()
         if desired_mode == "3":
-            humble_chooser_mode(humble_session, order_details)
+            humble_chooser_mode(
+                humble_session,
+                order_details,
+                steam_cookies=args.steam_cookies,
+                only_expiring=args.only_expiring,
+            )
             sys.exit()
 
     # Auto-Redeem mode
@@ -163,6 +199,13 @@ def main(argv: list[str] | None = None) -> None:
             f"Filtered {original_length - len(steam_keys)} keys from previous runs"
         )
 
+    if args.only_expiring:
+        original_length = len(steam_keys)
+        steam_keys = filter_expiring_keys(humble_session, order_details, steam_keys)
+        print_info(
+            f"Filtered {original_length - len(steam_keys)} keys without an expiry date"
+        )
+
     revealed = sum(1 for k in steam_keys if "redeemed_key_val" in k)
     unrevealed = len(steam_keys) - revealed
 
@@ -175,7 +218,11 @@ def main(argv: list[str] | None = None) -> None:
     console.print()
 
     redeem_steam_keys(
-        humble_session, steam_keys, auto=args.auto, reveal_all=args.reveal_all
+        humble_session,
+        steam_keys,
+        auto=args.auto,
+        reveal_all=args.reveal_all,
+        steam_cookies=args.steam_cookies,
     )
 
 
