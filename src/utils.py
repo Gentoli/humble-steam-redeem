@@ -74,8 +74,15 @@ def import_cookies(cookie_file: Union[str, Path], session, domain: str) -> bool:
     imported = False
     for cookie in cookie_jar:
         cookie_domain = (cookie.domain or "").lstrip(".").lower()
-        if cookie_domain != target_domain and not cookie_domain.endswith(
-            f".{target_domain}"
+        if (
+            cookie_domain != target_domain
+            and not (
+                "." in cookie_domain
+                and (
+                    cookie_domain.endswith(f".{target_domain}")
+                    or target_domain.endswith(f".{cookie_domain}")
+                )
+            )
         ):
             continue
         session.cookies.set(

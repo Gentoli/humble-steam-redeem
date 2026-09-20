@@ -248,15 +248,6 @@ def _expiry_entries(node: Any) -> list[dict[str, Any]]:
     return entries
 
 
-def get_steam_expiration(node: Any) -> str | None:
-    """Return the expiry date from the relevant Steam key entry, if present."""
-    for entry in _expiry_entries(node):
-        expiration = entry.get(_EXPIRATION_FIELD)
-        if expiration:
-            return str(expiration)
-    return None
-
-
 def get_expiring_game_identifiers(
     humble_session, order_details: list[dict]
 ) -> dict[str, set[str]]:
