@@ -374,10 +374,13 @@ def steam_login(
     *,
     auto: bool = False,
     cookies_file: str | Path | None = None,
+    user_agent: str | None = None,
 ) -> requests.Session:
     """Sign into Steam web. Tries QR code first, falls back to credentials."""
     # Attempt to use saved session
     r = requests.Session()
+    if user_agent:
+        r.headers["User-Agent"] = user_agent
     if cookies_file is not None:
         if not import_cookies(cookies_file, r, "store.steampowered.com"):
             print_error(f"Couldn't load Steam cookies from {cookies_file}")
@@ -398,6 +401,8 @@ def steam_login(
     print_rule("Steam Login")
 
     session = requests.Session()
+    if user_agent:
+        session.headers["User-Agent"] = user_agent
 
     # Try QR login first
     result = _try_qr_login(session)

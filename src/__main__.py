@@ -72,6 +72,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Load Netscape cookies.txt for store.steampowered.com instead of logging in.",
     )
     parser.add_argument(
+        "--user-agent",
+        metavar="USER_AGENT",
+        help="Use this User-Agent for Humble and Steam requests.",
+    )
+    parser.add_argument(
         "--only-expiring",
         "--expiring",
         dest="only_expiring",
@@ -149,6 +154,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # Create a consistent session for Humble API use
     humble_session = cloudscraper.CloudScraper()
+    if args.user_agent:
+        humble_session.headers["User-Agent"] = args.user_agent
     humble_login(humble_session, auto=args.auto, cookies_file=args.humble_cookies)
     print_success("Successfully signed in on Humble.")
 
@@ -174,6 +181,7 @@ def main(argv: list[str] | None = None) -> None:
                 humble_session,
                 order_details,
                 steam_cookies=args.steam_cookies,
+                user_agent=args.user_agent,
                 only_expiring=args.only_expiring,
             )
             sys.exit()
@@ -182,6 +190,7 @@ def main(argv: list[str] | None = None) -> None:
                 humble_session,
                 order_details,
                 steam_cookies=args.steam_cookies,
+                user_agent=args.user_agent,
                 only_expiring=args.only_expiring,
                 start_bundle=args.choice_start,
             )
@@ -232,6 +241,7 @@ def main(argv: list[str] | None = None) -> None:
         auto=args.auto,
         reveal_all=args.reveal_all,
         steam_cookies=args.steam_cookies,
+        user_agent=args.user_agent,
     )
 
 

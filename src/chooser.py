@@ -229,6 +229,7 @@ def humble_chooser_mode(
     order_details: list[dict[str, Any]],
     *,
     steam_cookies: str | Path | None = None,
+    user_agent: str | None = None,
     only_expiring: bool = False,
     start_bundle: str | None = None,
 ) -> None:
@@ -416,5 +417,8 @@ def humble_chooser_mode(
                         "an expiry date"
                     )
                 redeem_steam_keys(
-                    humble_session, chosen_keys, steam_cookies=steam_cookies
+                    humble_session,
+                    chosen_keys,
+                    steam_cookies=steam_cookies,
+                    user_agent=user_agent,
                 )

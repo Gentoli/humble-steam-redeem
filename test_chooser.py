@@ -357,8 +357,15 @@ def test_cli_parses_start_bundle_flag():
     assert args.choice_start == "november-2023"
 
 
+def test_cli_parses_user_agent_flag():
+    args = app._parse_args(["--user-agent", "custom-agent/1.0"])
+    assert args.user_agent == "custom-agent/1.0"
+
+
 def test_cli_passes_start_bundle_to_choice_mode():
     class _Session:
+        headers = {}
+
         def get(self, url):
             class _Response:
                 def json(self):
@@ -373,6 +380,7 @@ def test_cli_passes_start_bundle_to_choice_mode():
             "auto": False,
             "humble_cookies": None,
             "steam_cookies": None,
+            "user_agent": "custom-agent/1.0",
             "only_expiring": False,
             "choice_start": "november-2023",
         },
@@ -398,9 +406,11 @@ def test_cli_passes_start_bundle_to_choice_mode():
         session,
         [],
         steam_cookies=None,
+        user_agent="custom-agent/1.0",
         only_expiring=False,
         start_bundle="november-2023",
     )
+    assert session.headers["User-Agent"] == "custom-agent/1.0"
 
 
 def test_choice_order_refresh_handles_non_json_response():
@@ -499,6 +509,7 @@ if __name__ == "__main__":
     test_choose_games_uses_order_key_and_ajax_headers()
     test_choose_games_marks_non_json_response_as_failed()
     test_cli_parses_start_bundle_flag()
+    test_cli_parses_user_agent_flag()
     test_cli_passes_start_bundle_to_choice_mode()
     test_choice_order_refresh_handles_non_json_response()
     test_choice_mode_skips_failed_order_refresh()

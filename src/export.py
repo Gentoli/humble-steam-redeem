@@ -35,6 +35,7 @@ def export_mode(
     order_details: list[dict[str, Any]],
     *,
     steam_cookies: str | Path | None = None,
+    user_agent: str | None = None,
     only_expiring: bool = False,
 ) -> None:
     """Interactive CSV export of Humble keys with optional Steam ownership info."""
@@ -72,9 +73,13 @@ def export_mode(
     )
 
     if steam_config:
-        steam_session = steam_login(cookies_file=steam_cookies)
+        steam_session = steam_login(
+            cookies_file=steam_cookies, user_agent=user_agent
+        )
         if verify_logins_session(steam_session)[1]:
-            owned_app_details = get_owned_apps(steam_session)
+            owned_app_details = get_owned_apps(
+                steam_session, user_agent=user_agent
+            )
 
     desired_keys = "steam_app_id" if export_steam_only else "key_type_human_name"
     keylist = list(find_dict_keys(order_details, desired_keys, True))

@@ -167,16 +167,21 @@ def redeem_steam_keys(
     auto: bool = False,
     reveal_all: bool = False,
     steam_cookies: str | Path | None = None,
+    user_agent: str | None = None,
 ) -> None:
     """Full auto-redeem pipeline: Steam login, ownership check, redeem with rate-limit handling."""
-    session = steam_login(auto=auto, cookies_file=steam_cookies)
+    session = steam_login(
+        auto=auto, cookies_file=steam_cookies, user_agent=user_agent
+    )
 
     print_success("Successfully signed in on Steam.")
     print_info(
         "Getting your owned content to avoid attempting to register keys already owned…"
     )
 
-    owned_app_details = get_owned_apps(session, auto=auto)
+    owned_app_details = get_owned_apps(
+        session, auto=auto, user_agent=user_agent
+    )
     have_ownership = bool(owned_app_details)
 
     if have_ownership:
