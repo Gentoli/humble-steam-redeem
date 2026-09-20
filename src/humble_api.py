@@ -205,6 +205,12 @@ def _has_unexpired_expiry(node: Any) -> bool:
     )
 
 
+def _has_expired_expiry(node: Any) -> bool:
+    """Return whether all expiry-bearing Steam keys on *node* are expired."""
+    entries = _expiry_entries(node)
+    return bool(entries) and all(entry.get("is_expired", False) for entry in entries)
+
+
 def _is_steam_expiry_entry(entry: dict[str, Any]) -> bool:
     """Return whether an expiry-bearing entry describes a Steam key."""
     key_type = entry.get("key_type")
@@ -246,6 +252,15 @@ def _expiry_entries(node: Any) -> list[dict[str, Any]]:
     if key_entries:
         return steam_entries
     return entries
+
+
+def get_steam_expiration(node: Any) -> str | None:
+    """Return the expiry date from the relevant Steam key entry, if present."""
+    for entry in _expiry_entries(node):
+        expiration = entry.get(_EXPIRATION_FIELD)
+        if expiration:
+            return str(expiration)
+    return None
 
 
 def get_expiring_game_identifiers(
@@ -388,12 +403,12 @@ def get_choices(
 
             choice_options = content_choice_data[identifier]["content_choices"]
 
-        if only_expiring:
-            choice_options = {
-                name: game
-                for name, game in choice_options.items()
-                if _has_unexpired_expiry(game)
-            }
+        choice_options = {
+            name: game
+            for name, game in choice_options.items()
+            if not _has_expired_expiry(game)
+            and (not only_expiring or _has_unexpired_expiry(game))
+        }
 
         month["available_choices"] = [
             game[1]

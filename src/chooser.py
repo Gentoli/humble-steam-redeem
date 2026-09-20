@@ -20,6 +20,7 @@ from src.humble_api import (
     HUMBLE_SUB_PAGE,
     filter_expiring_keys,
     get_choices,
+    get_steam_expiration,
 )
 from src.redeemer import redeem_steam_keys
 from src.utils import (
@@ -51,8 +52,13 @@ class _CountingCheckbox(CheckboxPrompt):
         return f"({n}/{self._max_selected} selected, space=toggle, enter=confirm)"
 
 
+def _choice_expiration(choice: dict[str, Any]) -> str | None:
+    """Return the expiry date from the Choice game's Steam key entry."""
+    return get_steam_expiration(choice)
+
+
 def _choice_label(choice: dict[str, Any]) -> str:
-    """Format a Choice game name and rating for the game list."""
+    """Format a Choice game name, rating, and expiry for the game list."""
     parts = [choice["title"]]
     rating = choice.get("user_rating") or {}
     review = rating.get("review_text")
@@ -63,6 +69,8 @@ def _choice_label(choice: dict[str, Any]) -> str:
         parts.append(f"  — {review.replace('_', ' ')}")
     if "tpkds" not in choice:
         parts.append("  [must redeem via Humble]")
+    expiration = _choice_expiration(choice)
+    parts.append(f"  — exp: {expiration or 'none'}")
     return "".join(parts)
 
 

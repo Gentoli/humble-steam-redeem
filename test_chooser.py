@@ -209,7 +209,7 @@ def test_chooser_fetches_next_month_after_current_view():
     assert events == ["first month fetched", "second month fetched"]
 
 
-def test_choice_label_does_not_display_expiry():
+def test_choice_label_ends_with_expiry():
     choice = _game("Future Game", expiration="2026-12-01T00:00:00")
     choice["user_rating"] = {
         "review_text": "very_positive",
@@ -220,8 +220,43 @@ def test_choice_label_does_not_display_expiry():
 
     assert "Future Game" in label
     assert "very positive (95%)" in label
-    assert "exp:" not in label
-    assert "2026-12-01T00:00:00" not in label
+    assert label.endswith("exp: 2026-12-01T00:00:00")
+
+
+def test_choice_label_uses_steam_expiry_when_tpkds_have_multiple_platforms():
+    choice = _game("Future Game", expiration="2026-12-01T00:00:00")
+    choice["tpkds"].insert(
+        0,
+        {
+            "machine_name": "future_game_epic",
+            "key_type": "epic_keyless",
+            "expiration_date|datetime": "2099-01-01T00:00:00",
+            "is_expired": False,
+        },
+    )
+
+    assert chooser._choice_expiration(choice) == "2026-12-01T00:00:00"
+
+
+def test_choice_skips_expired_games_without_filter_flag():
+    session = _Session(
+        {
+            "mixed": _choice_data(
+                _game(
+                    "Expired Game",
+                    expiration="2025-01-01T00:00:00",
+                    is_expired=True,
+                ),
+                _game("Available Game"),
+            )
+        }
+    )
+
+    months = list(get_choices(session, [_month("mixed")]))
+
+    assert [choice["title"] for choice in months[0]["available_choices"]] == [
+        "Available Game"
+    ]
 
 
 def test_redeem_all_prompt_shows_game_list():
@@ -256,7 +291,7 @@ def test_redeem_all_prompt_shows_game_list():
         patch.object(chooser.console, "print", side_effect=_capture_print),
     ):
         chooser.humble_chooser_mode(object(), [])
-    assert "2026-12-01T00:00:00" not in "\n".join(rendered)
+    assert "exp: 2026-12-01T00:00:00" in "\n".join(rendered)
 
 
 def test_choose_games_uses_order_key_and_ajax_headers():
@@ -457,7 +492,9 @@ if __name__ == "__main__":
     test_choice_months_are_oldest_first_from_start_bundle()
     test_unknown_start_bundle_is_reported_without_fetching_pages()
     test_chooser_fetches_next_month_after_current_view()
-    test_choice_label_does_not_display_expiry()
+    test_choice_label_ends_with_expiry()
+    test_choice_label_uses_steam_expiry_when_tpkds_have_multiple_platforms()
+    test_choice_skips_expired_games_without_filter_flag()
     test_redeem_all_prompt_shows_game_list()
     test_choose_games_uses_order_key_and_ajax_headers()
     test_choose_games_marks_non_json_response_as_failed()
