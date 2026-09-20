@@ -54,6 +54,7 @@ jobs:
           pyinstaller --onefile --name smoke-test smoke_test.py \
             --hidden-import cryptography \
             --hidden-import cloudscraper \
+            --hidden-import cloudscraper.tls_rotator \
             --hidden-import cloudscraper.interpreters \
             --hidden-import cloudscraper.interpreters.native \
             --hidden-import fuzzywuzzy \

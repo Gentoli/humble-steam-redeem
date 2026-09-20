@@ -206,6 +206,6 @@ Delete `.state/` to force fresh logins. Delete `config.yaml` to reset settings.
 | `python-Levenshtein` | Fast string matching backend for fuzzywuzzy |
 | `requests` | HTTP client |
 | `requests-futures` | Concurrent order fetching |
-| `cloudscraper` | Bypasses Humble's CloudFlare protection |
+| `ai-cloudscraper` | Drop-in CloudScraper client with TLS fingerprint rotation for Humble's CloudFlare protection |
 | `rich` | Terminal UI (panels, spinners, tables, colors) |
 | `qrcode` | QR code generation for Steam mobile app login |

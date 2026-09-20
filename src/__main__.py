@@ -10,6 +10,7 @@ from pathlib import Path
 
 import cloudscraper
 from requests_futures.sessions import FuturesSession
+from cloudscraper.tls_rotator import TLSFingerprintRotator
 
 from src.chooser import humble_chooser_mode
 from src.export import export_mode
@@ -153,7 +154,9 @@ def main(argv: list[str] | None = None) -> None:
     sys.stderr = open("error.log", "a")
 
     # Create a consistent session for Humble API use
-    humble_session = cloudscraper.CloudScraper()
+    rotator = TLSFingerprintRotator(rotation_interval=10)
+    fingerprint = rotator.get_fingerprint()
+    humble_session = cloudscraper.CloudScraper(browser=fingerprint["name"])
     if args.user_agent:
         humble_session.headers["User-Agent"] = args.user_agent
     humble_login(humble_session, auto=args.auto, cookies_file=args.humble_cookies)
