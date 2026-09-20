@@ -208,19 +208,35 @@ def humble_chooser_mode(
 ) -> None:
     """Interactive Humble Choice game selection UI."""
     try_redeem_keys: list[str] = []
-    with console.status("Loading Humble Choice months…", spinner="dots") as status:
-        months = list(
-            get_choices(
-                humble_session,
-                order_details,
-                only_expiring=only_expiring,
-                progress=status.update,
-            )
+    loading_status = None
+
+    def update_loading_status(message: str) -> None:
+        if loading_status is not None:
+            loading_status.update(message)
+
+    choice_months = iter(
+        get_choices(
+            humble_session,
+            order_details,
+            only_expiring=only_expiring,
+            progress=update_loading_status,
         )
+    )
     first = True
     redeem_keys = False
 
-    for month in months:
+    while True:
+        with console.status(
+            "Loading next Humble Choice month…", spinner="dots"
+        ) as status:
+            loading_status = status
+            try:
+                month = next(choice_months)
+            except StopIteration:
+                break
+            finally:
+                loading_status = None
+
         redeem_all = None
         if first:
             redeem_keys = prompt_yes_no(

@@ -111,6 +111,46 @@ def test_only_expiring_skips_non_expiring_and_expired_months():
     assert any("Found 1 available games in mixed" in action for action in progress)
 
 
+def test_chooser_fetches_next_month_after_current_view():
+    events = []
+
+    def _view_month(title):
+        return {
+            "available_choices": [_game(title)],
+            "uses_choices": False,
+            "parent_identifier": "initial",
+            "product": {"choice_url": title.lower(), "human_name": title},
+        }
+
+    first_month = _view_month("First Month")
+    second_month = _view_month("Second Month")
+
+    def _lazy_choices(*args, **kwargs):
+        def _months():
+            events.append("first month fetched")
+            yield first_month
+            events.append("second month fetched")
+            yield second_month
+
+        return _months()
+
+    def _prompt(question):
+        if question == "After all months are chosen, sign into Steam and redeem the keys?":
+            assert "second month fetched" not in events
+            return False
+        return True
+
+    with (
+        patch.object(chooser, "get_choices", side_effect=_lazy_choices),
+        patch.object(chooser, "prompt_yes_no", side_effect=_prompt),
+        patch.object(chooser, "choose_games", return_value=[]),
+        patch.object(chooser, "cls"),
+    ):
+        chooser.humble_chooser_mode(object(), [])
+
+    assert events == ["first month fetched", "second month fetched"]
+
+
 def test_choice_label_ends_with_expiry():
     choice = _game("Future Game", expiration="2026-12-01T00:00:00")
     choice["user_rating"] = {
@@ -296,6 +336,7 @@ def test_ctrl_c_exits_chooser_instead_of_advancing():
 
 if __name__ == "__main__":
     test_only_expiring_skips_non_expiring_and_expired_months()
+    test_chooser_fetches_next_month_after_current_view()
     test_choice_label_ends_with_expiry()
     test_redeem_all_prompt_shows_game_list()
     test_choose_games_uses_order_key_and_ajax_headers()
