@@ -39,8 +39,8 @@ dependencies = [
 ]
 
 [project.scripts]
-humble-steam-redeem = "src.__main__:main"
-steam-redeemer = "src.__main__:main"
+humble-steam-redeem = "src.__main__:cli"
+steam-redeemer = "src.__main__:cli"
 
 [project.urls]
 Homepage = "https://github.com/castanley/humble-steam-redeem"

@@ -78,9 +78,17 @@ def choose_games(
     choice_month_name: str,
     identifier: str,
     chosen: list[dict[str, Any]],
+    *,
+    order_gamekey: str | None = None,
 ) -> list[str]:
     """Submit chosen games for a Humble Choice month. Returns list of failed titles."""
     failed: list[str] = []
+    headers = {
+        **HUMBLE_HEADERS,
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Referer": f"{HUMBLE_SUB_PAGE}{choice_month_name}",
+        "X-Requested-With": "XMLHttpRequest",
+    }
     for choice in chosen:
         display_name = choice["display_item_machine_name"]
         if "tpkds" not in choice:
@@ -89,15 +97,37 @@ def choose_games(
             webbrowser.open(url)
         else:
             payload = {
-                "gamekey": choice["tpkds"][0]["gamekey"],
+                "gamekey": order_gamekey or choice["tpkds"][0]["gamekey"],
                 "parent_identifier": identifier,
                 "chosen_identifiers[]": display_name,
                 "is_multikey_and_from_choice_modal": "false",
             }
+            response = None
             try:
-                res = humble_session.post(
-                    HUMBLE_CHOOSE_CONTENT, data=payload, headers=HUMBLE_HEADERS
-                ).json()
+                response = humble_session.post(
+                    HUMBLE_CHOOSE_CONTENT, data=payload, headers=headers
+                )
+                res = response.json()
+            except ValueError:
+                status = getattr(response, "status_code", "unknown")
+                response_headers = getattr(response, "headers", {}) or {}
+                content_type = (
+                    response_headers.get("Content-Type")
+                    or response_headers.get("content-type")
+                    or "unknown"
+                )
+                message = (
+                    f"Error choosing {escape(choice['title'])}: Humble returned "
+                    f"a non-JSON response (HTTP {status}, {content_type})"
+                )
+                print_error(message)
+                print(
+                    f"choose_games non-JSON response for {choice['title']!r}: "
+                    f"HTTP {status}, {content_type}",
+                    file=sys.stderr,
+                )
+                failed.append(choice["title"])
+                continue
             except Exception as e:
                 print_error(f"Error choosing {escape(choice['title'])}: {e}")
                 print(
@@ -106,7 +136,7 @@ def choose_games(
                 )
                 failed.append(choice["title"])
                 continue
-            if "success" not in res or not res["success"]:
+            if not isinstance(res, dict) or not res.get("success"):
                 print_error(f"Error choosing {escape(choice['title'])}")
                 console.print(res)
                 print(
@@ -117,6 +147,51 @@ def choose_games(
             else:
                 print_success(f"Chose game {escape(choice['title'])}")
     return failed
+
+
+def _refresh_choice_order(humble_session, order: str) -> dict[str, Any] | None:
+    """Fetch refreshed order data, returning None when Humble did not send JSON."""
+    response = None
+    try:
+        response = humble_session.get(
+            f"{HUMBLE_ORDER_DETAILS_API}{order}?all_tpkds=true"
+        )
+        data = response.json()
+    except ValueError:
+        status = getattr(response, "status_code", "unknown")
+        response_headers = getattr(response, "headers", {}) or {}
+        content_type = (
+            response_headers.get("Content-Type")
+            or response_headers.get("content-type")
+            or "unknown"
+        )
+        message = (
+            f"Couldn't refresh Choice order {escape(order)}: Humble returned "
+            f"a non-JSON response (HTTP {status}, {content_type})"
+        )
+        print_error(message)
+        print(
+            f"choice order refresh non-JSON response for {order!r}: "
+            f"HTTP {status}, {content_type}",
+            file=sys.stderr,
+        )
+        return None
+    except Exception as e:
+        print_error(f"Couldn't refresh Choice order {escape(order)}: {e}")
+        print(
+            f"choice order refresh exception for {order!r}: {e!r}",
+            file=sys.stderr,
+        )
+        return None
+
+    if not isinstance(data, dict):
+        print_error(f"Couldn't refresh Choice order {escape(order)}: invalid response")
+        print(
+            f"choice order refresh returned {data!r} for {order!r}",
+            file=sys.stderr,
+        )
+        return None
+    return data
 
 
 def humble_chooser_mode(
@@ -240,7 +315,11 @@ def humble_chooser_mode(
                 choice_month_name = month["product"]["choice_url"]
                 identifier = month["parent_identifier"]
                 failed = choose_games(
-                    humble_session, choice_month_name, identifier, chosen
+                    humble_session,
+                    choice_month_name,
+                    identifier,
+                    chosen,
+                    order_gamekey=month.get("gamekey"),
                 )
                 if failed:
                     print_error(
@@ -262,11 +341,16 @@ def humble_chooser_mode(
         if redeem_keys and try_redeem_keys:
             print_success("Redeeming keys now!")
             updated_monthlies = [
-                humble_session.get(
-                    f"{HUMBLE_ORDER_DETAILS_API}{order}?all_tpkds=true"
-                ).json()
+                refreshed
                 for order in try_redeem_keys
+                if (refreshed := _refresh_choice_order(humble_session, order))
+                is not None
             ]
+            if len(updated_monthlies) != len(try_redeem_keys):
+                print_warning(
+                    f"Couldn't refresh {len(try_redeem_keys) - len(updated_monthlies)} "
+                    "selected Choice order(s); continuing with the rest."
+                )
             chosen_keys = list(
                 find_dict_keys(updated_monthlies, "steam_app_id", True)
             )

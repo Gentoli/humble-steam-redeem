@@ -226,9 +226,15 @@ def main(argv: list[str] | None = None) -> None:
     )
 
 
-if __name__ == "__main__":
+def cli() -> int:
+    """Run the CLI and exit cleanly when the user presses Ctrl+C."""
     try:
         main()
     except KeyboardInterrupt:
         console.print("\n  [dim]Interrupted by user.[/dim]")
-        sys.exit(130)
+        return 130
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(cli())

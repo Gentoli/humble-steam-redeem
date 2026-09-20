@@ -4,7 +4,13 @@ import json
 from unittest.mock import patch
 
 import src.chooser as chooser
-from src.humble_api import HUMBLE_SUB_PAGE, get_choices
+import src.__main__ as app
+from src.humble_api import (
+    HUMBLE_CHOOSE_CONTENT,
+    HUMBLE_ORDER_DETAILS_API,
+    HUMBLE_SUB_PAGE,
+    get_choices,
+)
 
 
 _DATA_MARKER = '<script id="webpack-monthly-product-data" type="application/json">'
@@ -153,6 +159,96 @@ def test_redeem_all_prompt_shows_game_list():
         chooser.humble_chooser_mode(object(), [])
 
 
+def test_choose_games_uses_order_key_and_ajax_headers():
+    choice = _game("Future Game")
+    requests = []
+
+    class _Response:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+
+        def json(self):
+            return {"success": True}
+
+    class _Session:
+        def post(self, url, *, data, headers):
+            requests.append((url, data, headers))
+            return _Response()
+
+    assert (
+        chooser.choose_games(
+            _Session(),
+            "mixed",
+            "initial",
+            [choice],
+            order_gamekey="order-key",
+        )
+        == []
+    )
+    url, payload, headers = requests[0]
+    assert url == HUMBLE_CHOOSE_CONTENT
+    assert payload["gamekey"] == "order-key"
+    assert payload["chosen_identifiers[]"] == "future_game"
+    assert headers["Referer"] == f"{HUMBLE_SUB_PAGE}mixed"
+    assert headers["X-Requested-With"] == "XMLHttpRequest"
+
+
+def test_choice_order_refresh_handles_non_json_response():
+    class _Response:
+        status_code = 403
+        headers = {"Content-Type": "text/html"}
+
+        def json(self):
+            raise ValueError("not JSON")
+
+    class _Session:
+        def get(self, url):
+            assert url == f"{HUMBLE_ORDER_DETAILS_API}order-key?all_tpkds=true"
+            return _Response()
+
+    assert chooser._refresh_choice_order(_Session(), "order-key") is None
+
+
+def test_choice_mode_skips_failed_order_refresh():
+    month = {
+        "available_choices": [_game("Future Game")],
+        "uses_choices": False,
+        "parent_identifier": "initial",
+        "gamekey": "order-key",
+        "product": {"choice_url": "mixed", "human_name": "mixed"},
+    }
+
+    class _Response:
+        status_code = 502
+        headers = {"Content-Type": "text/html"}
+
+        def json(self):
+            raise ValueError("not JSON")
+
+    class _Session:
+        def get(self, url):
+            return _Response()
+
+    with (
+        patch.object(chooser, "get_choices", return_value=[month]),
+        patch.object(chooser, "prompt_yes_no", return_value=True),
+        patch.object(chooser, "choose_games", return_value=[]),
+        patch.object(chooser, "redeem_steam_keys") as redeem,
+        patch.object(chooser, "cls"),
+    ):
+        chooser.humble_chooser_mode(_Session(), [])
+
+    redeem.assert_not_called()
+
+
+def test_cli_returns_interrupt_status_without_traceback():
+    with (
+        patch.object(app, "main", side_effect=KeyboardInterrupt),
+        patch.object(app.console, "print"),
+    ):
+        assert app.cli() == 130
+
+
 def test_ctrl_c_exits_chooser_instead_of_advancing():
     month = {
         "available_choices": [_game("Future Game")],
@@ -185,5 +281,9 @@ if __name__ == "__main__":
     test_only_expiring_skips_non_expiring_and_expired_months()
     test_choice_label_ends_with_expiry()
     test_redeem_all_prompt_shows_game_list()
+    test_choose_games_uses_order_key_and_ajax_headers()
+    test_choice_order_refresh_handles_non_json_response()
+    test_choice_mode_skips_failed_order_refresh()
+    test_cli_returns_interrupt_status_without_traceback()
     test_ctrl_c_exits_chooser_instead_of_advancing()
     print("Chooser tests passed")
