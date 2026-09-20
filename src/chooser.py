@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,10 @@ def _log_full_response_error(
     body = getattr(response, "text", "")
     if not isinstance(body, str) or not body:
         body = "<empty response body>"
+    traceback_text = traceback.format_exc()
+    if traceback_text == "NoneType: None\n":
+        traceback_text = ""
+    traceback_section = f"Traceback:\n{traceback_text}" if traceback_text else ""
     print(
         f"{action}: {error!r}\n"
         f"Request: {method} {actual_url or 'unknown'}\n"
@@ -111,6 +116,7 @@ def _log_full_response_error(
         f"URL: {url}\n"
         f"HTTP {status}, {content_type}\n"
         f"Response body:\n{body}\n"
+        f"{traceback_section}\n"
         "--- end response ---",
         file=sys.stderr,
     )
@@ -130,7 +136,7 @@ def choose_games(
     game's reveal key. Returns a list of failed titles.
     """
     failed: list[str] = []
-    headers = {
+    base_headers = {
         **HUMBLE_HEADERS,
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "Referer": f"{HUMBLE_SUB_PAGE}{choice_month_name}",
@@ -149,10 +155,11 @@ def choose_games(
                 "chosen_identifiers[]": display_name,
                 "is_multikey_and_from_choice_modal": "false",
             }
+            request_headers = dict(base_headers)
             response = None
             try:
                 response = humble_session.post(
-                    HUMBLE_CHOOSE_CONTENT, data=payload, headers=headers
+                    HUMBLE_CHOOSE_CONTENT, data=payload, headers=request_headers
                 )
                 res = response.json()
             except ValueError as e:
@@ -173,13 +180,21 @@ def choose_games(
                     response,
                     e,
                     request_url=HUMBLE_CHOOSE_CONTENT,
-                    request_headers=headers,
+                    request_headers=request_headers,
                     request_body=payload,
                 )
                 failed.append(choice["title"])
                 continue
             except Exception as e:
                 print_error(f"Error choosing {escape(choice['title'])}: {e}")
+                _log_full_response_error(
+                    f"choose_games exception for {choice['title']!r}",
+                    response,
+                    e,
+                    request_url=HUMBLE_CHOOSE_CONTENT,
+                    request_headers=request_headers,
+                    request_body=payload,
+                )
                 print(
                     f"choose_games exception for {choice['title']!r}: {e!r}",
                     file=sys.stderr,

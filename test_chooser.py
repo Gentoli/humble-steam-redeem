@@ -328,6 +328,40 @@ def test_choose_games_uses_order_key_and_ajax_headers():
     assert headers["X-Requested-With"] == "XMLHttpRequest"
 
 
+def test_choose_games_does_not_reuse_mutated_headers():
+    requests = []
+
+    class _Response:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+
+        def json(self):
+            return {"success": True}
+
+    class _Session:
+        def post(self, url, *, data, headers):
+            requests.append(headers)
+            if len(requests) == 1:
+                header_iterator = iter(headers)
+                next(header_iterator)
+                headers["Injected-Header"] = "unexpected"
+                next(header_iterator)
+            return _Response()
+
+    log = io.StringIO()
+    with redirect_stderr(log):
+        failed = chooser.choose_games(
+            _Session(),
+            "mixed",
+            "initial",
+            [_game("First Game"), _game("Second Game")],
+        )
+
+    assert failed == ["First Game"]
+    assert requests[0] is not requests[1]
+    assert "Injected-Header" not in requests[1]
+
+
 def test_choose_games_marks_non_json_response_as_failed():
     class _Response:
         status_code = 403
