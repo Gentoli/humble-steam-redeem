@@ -50,6 +50,29 @@ class _CountingCheckbox(CheckboxPrompt):
         return f"({n}/{self._max_selected} selected, space=toggle, enter=confirm)"
 
 
+def _choice_expiration(choice: dict[str, Any]) -> str | None:
+    """Return the first expiry date exposed by a Choice game."""
+    expiration = next(find_dict_keys(choice, "expiration_date|datetime"), None)
+    return str(expiration) if expiration else None
+
+
+def _choice_label(choice: dict[str, Any]) -> str:
+    """Format a Choice game name, rating, and expiry for the game list."""
+    parts = [choice["title"]]
+    rating = choice.get("user_rating") or {}
+    review = rating.get("review_text")
+    pct = rating.get("steam_percent|decimal")
+    if review and pct is not None:
+        parts.append(f"  — {review.replace('_', ' ')} ({int(pct * 100)}%)")
+    elif review:
+        parts.append(f"  — {review.replace('_', ' ')}")
+    if "tpkds" not in choice:
+        parts.append("  [must redeem via Humble]")
+    expiration = _choice_expiration(choice)
+    parts.append(f"  — exp: {expiration or 'none'}")
+    return "".join(parts)
+
+
 def choose_games(
     humble_session,
     choice_month_name: str,
@@ -105,9 +128,15 @@ def humble_chooser_mode(
 ) -> None:
     """Interactive Humble Choice game selection UI."""
     try_redeem_keys: list[str] = []
-    months = get_choices(
-        humble_session, order_details, only_expiring=only_expiring
-    )
+    with console.status("Loading Humble Choice months…", spinner="dots") as status:
+        months = list(
+            get_choices(
+                humble_session,
+                order_details,
+                only_expiring=only_expiring,
+                progress=status.update,
+            )
+        )
     first = True
     redeem_keys = False
 
@@ -134,7 +163,14 @@ def humble_chooser_mode(
             month_name = escape(month["product"]["human_name"])
             print_rule(f"{month_name}  ·  {label}")
 
+            def _label(choice: dict[str, Any]) -> str:
+                return _choice_label(choice)
+
             if redeem_all is None and remaining == len(choices):
+                console.print("[bold]Games:[/bold]")
+                for choice in choices:
+                    console.print(f"  {escape(_label(choice))}")
+                console.print()
                 redeem_all = prompt_yes_no("Redeem all?")
             else:
                 redeem_all = False
@@ -147,19 +183,6 @@ def humble_chooser_mode(
                     "[dim]Submit empty for more options (browser / skip).[/dim]"
                 )
                 console.print()
-
-                def _label(choice: dict[str, Any]) -> str:
-                    parts = [choice["title"]]
-                    rating = choice.get("user_rating") or {}
-                    review = rating.get("review_text")
-                    pct = rating.get("steam_percent|decimal")
-                    if review and pct is not None:
-                        parts.append(f"  — {review.replace('_', ' ')} ({int(pct * 100)}%)")
-                    elif review:
-                        parts.append(f"  — {review.replace('_', ' ')}")
-                    if "tpkds" not in choice:
-                        parts.append("  [must redeem via Humble]")
-                    return "".join(parts)
 
                 checkbox_choices = [
                     Choice(value=idx, name=_label(choice))

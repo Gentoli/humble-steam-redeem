@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any, Callable, Generator
 
 from rich.prompt import Prompt
 
@@ -265,6 +265,7 @@ def get_choices(
     order_details: list[dict],
     *,
     only_expiring: bool = False,
+    progress: Callable[[str], None] | None = None,
 ) -> Generator[dict, None, None]:
     """Yield Humble Choice months that still have unchosen games.
 
@@ -283,8 +284,14 @@ def get_choices(
     ]
 
     months = sorted(months, key=lambda m: m.get("created", ""))
+    total_months = len(months)
 
-    for month in months:
+    for index, month in enumerate(months, 1):
+        month_name = month["product"].get(
+            "human_name", month["product"].get("choice_url", "unknown")
+        )
+        if progress:
+            progress(f"Loading Choice month {index}/{total_months}: {month_name}")
         is_v3 = month["product"].get("is_subs_v3_product", False)
 
         # v3 unlock-all months don't advertise a choice count but still have
@@ -294,6 +301,8 @@ def get_choices(
 
         chosen_games = set(find_dict_keys(month.get("tpkd_dict", {}), "machine_name"))
 
+        if progress:
+            progress(f"Checking available games for {month_name}…")
         month["choice_data"] = get_month_data(humble_session, month)
 
         # Some months (fully region-locked, expired, etc.) can't be redeemed.
@@ -339,4 +348,9 @@ def get_choices(
 
         # Skip months with nothing left to claim (fully-chosen v2 or v3).
         if month["available_choices"]:
+            if progress:
+                progress(
+                    f"Found {len(month['available_choices'])} available games "
+                    f"in {month_name}"
+                )
             yield month

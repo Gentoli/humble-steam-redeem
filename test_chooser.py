@@ -70,6 +70,7 @@ def _choice_data(*games):
 
 
 def test_only_expiring_skips_non_expiring_and_expired_months():
+    progress = []
     session = _Session(
         {
             "mixed": _choice_data(
@@ -91,6 +92,7 @@ def test_only_expiring_skips_non_expiring_and_expired_months():
             session,
             [_month("mixed"), _month("expired")],
             only_expiring=True,
+            progress=progress.append,
         )
     )
 
@@ -98,6 +100,55 @@ def test_only_expiring_skips_non_expiring_and_expired_months():
     assert [choice["title"] for choice in months[0]["available_choices"]] == [
         "Future Game"
     ]
+    assert progress[0] == "Loading Choice month 1/2: mixed"
+    assert any("Checking available games for mixed" in action for action in progress)
+    assert any("Found 1 available games in mixed" in action for action in progress)
+
+
+def test_choice_label_ends_with_expiry():
+    choice = _game("Future Game", expiration="2026-12-01T00:00:00")
+    choice["user_rating"] = {
+        "review_text": "very_positive",
+        "steam_percent|decimal": 0.95,
+    }
+
+    label = chooser._choice_label(choice)
+
+    assert "Future Game" in label
+    assert "very positive (95%)" in label
+    assert label.endswith("exp: 2026-12-01T00:00:00")
+
+
+def test_redeem_all_prompt_shows_game_list():
+    month = {
+        "available_choices": [
+            _game("Future Game", expiration="2026-12-01T00:00:00"),
+            _game("Another Game"),
+        ],
+        "uses_choices": False,
+        "parent_identifier": "initial",
+        "product": {"choice_url": "mixed", "human_name": "mixed"},
+    }
+    rendered: list[str] = []
+
+    def _capture_print(*args, **kwargs):
+        rendered.append(" ".join(str(arg) for arg in args))
+
+    def _prompt(question):
+        if question == "Redeem all?":
+            assert "Future Game" in "\n".join(rendered)
+            assert "Another Game" in "\n".join(rendered)
+            return True
+        return False
+
+    with (
+        patch.object(chooser, "get_choices", return_value=[month]),
+        patch.object(chooser, "prompt_yes_no", side_effect=_prompt),
+        patch.object(chooser, "choose_games", return_value=[]),
+        patch.object(chooser, "cls"),
+        patch.object(chooser.console, "print", side_effect=_capture_print),
+    ):
+        chooser.humble_chooser_mode(object(), [])
 
 
 def test_ctrl_c_exits_chooser_instead_of_advancing():
@@ -130,5 +181,7 @@ def test_ctrl_c_exits_chooser_instead_of_advancing():
 
 if __name__ == "__main__":
     test_only_expiring_skips_non_expiring_and_expired_months()
+    test_choice_label_ends_with_expiry()
+    test_redeem_all_prompt_shows_game_list()
     test_ctrl_c_exits_chooser_instead_of_advancing()
     print("Chooser tests passed")
