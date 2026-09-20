@@ -403,7 +403,7 @@ def test_cli_passes_start_bundle_to_choice_mode():
     with (
         patch.object(app, "_parse_args", return_value=args),
         patch("src.humble_api.humble_login"),
-        patch.object(app.cloudscraper, "CloudScraper", return_value=session),
+        patch.object(app.cloudscraper, "CloudScraper", return_value=session) as cloud_scraper,
         patch.object(app, "TLSFingerprintRotator") as rotator,
         patch.object(app, "_fetch_order_details", return_value=([], [])),
         patch.object(app, "prompt_mode", return_value="3"),
@@ -419,7 +419,7 @@ def test_cli_passes_start_bundle_to_choice_mode():
 
     rotator.assert_called_once_with(rotation_interval=10)
     rotator.return_value.get_fingerprint.assert_called_once_with()
-    app.cloudscraper.CloudScraper.assert_called_once_with(browser="chrome_120")
+    cloud_scraper.assert_called_once_with(browser="chrome")
     chooser_mode.assert_called_once_with(
         session,
         [],

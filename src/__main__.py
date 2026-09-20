@@ -156,7 +156,8 @@ def main(argv: list[str] | None = None) -> None:
     # Create a consistent session for Humble API use
     rotator = TLSFingerprintRotator(rotation_interval=10)
     fingerprint = rotator.get_fingerprint()
-    humble_session = cloudscraper.CloudScraper(browser=fingerprint["name"])
+    browser = "firefox" if fingerprint["name"].startswith("firefox") else "chrome"
+    humble_session = cloudscraper.CloudScraper(browser=browser)
     if args.user_agent:
         humble_session.headers["User-Agent"] = args.user_agent
     humble_login(humble_session, auto=args.auto, cookies_file=args.humble_cookies)
