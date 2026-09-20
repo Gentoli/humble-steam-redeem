@@ -12,6 +12,8 @@ from src.humble_api import (
     HUMBLE_HEADERS,
     HUMBLE_ORDER_DETAILS_API,
     HUMBLE_SUB_PAGE,
+    filter_expiring_keys,
+    get_steam_expiration,
     get_choices,
     redeem_humble_key,
 )
@@ -55,7 +57,13 @@ def _month(choice_url, *, created=None):
     return month
 
 
-def _game(title, *, expiration=None, is_expired=False):
+def _game(
+    title,
+    *,
+    expiration=None,
+    is_expired=False,
+    custom_instructions=None,
+):
     tpkd = {
         "machine_name": f"{title.lower().replace(' ', '_')}_steam",
         "gamekey": f"{title}-key",
@@ -63,6 +71,8 @@ def _game(title, *, expiration=None, is_expired=False):
     if expiration is not None:
         tpkd["expiration_date|datetime"] = expiration
         tpkd["is_expired"] = is_expired
+    if custom_instructions is not None:
+        tpkd["custom_instructions_html"] = custom_instructions
     return {
         "display_item_machine_name": title.lower().replace(" ", "_"),
         "title": title,
@@ -259,6 +269,79 @@ def test_choice_skips_expired_games_without_filter_flag():
     assert [choice["title"] for choice in months[0]["available_choices"]] == [
         "Available Game"
     ]
+
+
+def test_custom_instructions_expiry_is_parsed_and_displayed():
+    choice = _game(
+        "Cat Quest 3",
+        custom_instructions=(
+            "<p><strong>Must be redeemed by September 2nd, 2099 "
+            "by 10:00 AM Pacific Time.</strong></p>"
+        ),
+    )
+
+    assert get_steam_expiration(choice) == "2099-09-02T17:00:00"
+    assert chooser._choice_expiration(choice) == "2099-09-02T17:00:00"
+
+
+def test_custom_instructions_expiry_filters_future_and_expired_games():
+    session = _Session(
+        {
+            "mixed": _choice_data(
+                _game(
+                    "Future Game",
+                    custom_instructions=(
+                        "Must be redeemed by December 1st, 2099 "
+                        "by 10:00 AM Pacific Time."
+                    ),
+                ),
+                _game(
+                    "Expired Game",
+                    custom_instructions=(
+                        "Must be redeemed by January 1st, 2020 "
+                        "by 10:00 AM Pacific Time."
+                    ),
+                ),
+                _game("No Expiry"),
+            )
+        }
+    )
+
+    months = list(
+        get_choices(session, [_month("mixed")], only_expiring=True)
+    )
+
+    assert [choice["title"] for choice in months[0]["available_choices"]] == [
+        "Future Game"
+    ]
+
+
+def test_custom_instructions_expiry_filters_export_keys_by_identifier():
+    session = _Session(
+        {
+            "mixed": _choice_data(
+                _game(
+                    "Future Game",
+                    custom_instructions="Must be redeemed by December 1st, 2099.",
+                )
+            )
+        }
+    )
+    key = {
+        "machine_name": "future_game_steam",
+        "gamekey": "Future Game-key",
+    }
+
+    assert filter_expiring_keys(session, [_month("mixed")], [key]) == [key]
+
+
+def test_malformed_custom_instructions_expiry_is_ignored():
+    choice = _game(
+        "Malformed Game",
+        custom_instructions="Must be redeemed by sometime next year.",
+    )
+
+    assert get_steam_expiration(choice) is None
 
 
 def test_redeem_all_prompt_shows_game_list():
@@ -587,8 +670,14 @@ if __name__ == "__main__":
     test_choice_label_ends_with_expiry()
     test_choice_label_uses_steam_expiry_when_tpkds_have_multiple_platforms()
     test_choice_skips_expired_games_without_filter_flag()
+    test_custom_instructions_expiry_is_parsed_and_displayed()
+    test_custom_instructions_expiry_filters_future_and_expired_games()
+    test_custom_instructions_expiry_filters_export_keys_by_identifier()
+    test_malformed_custom_instructions_expiry_is_ignored()
     test_redeem_all_prompt_shows_game_list()
     test_choose_games_uses_order_key_and_ajax_headers()
+    test_choose_games_does_not_reuse_mutated_headers()
+    test_redeem_humble_key_copies_shared_headers()
     test_choose_games_marks_non_json_response_as_failed()
     test_cli_parses_start_bundle_flag()
     test_cli_parses_user_agent_flag()
