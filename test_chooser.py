@@ -139,6 +139,8 @@ def test_redeem_all_prompt_shows_game_list():
             assert "Future Game" in "\n".join(rendered)
             assert "Another Game" in "\n".join(rendered)
             return True
+        if question == "Confirm selection?":
+            return True
         return False
 
     with (
