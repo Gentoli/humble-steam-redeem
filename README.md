@@ -50,8 +50,16 @@ If you skip the QR code and use credentials with 2FA enabled, the tool shows a c
 
 ## Setup
 
+### Using [uv](https://docs.astral.sh/uv/)
+
 ```bash
-pip install -r requirements.txt
+uvx --from git+https://github.com/castanley/humble-steam-redeem.git humble-steam-redeem
+```
+
+### Using pip from a local checkout
+
+```bash
+pip install .
 ```
 
 ### Configuration
@@ -124,10 +132,13 @@ Redeem new keys every 6 hours:
 |------|-------------|
 | `--auto` | Non-interactive mode — requires valid saved sessions in `.state/` |
 | `--reveal-all` | With `--auto`: reveal and redeem unrevealed keys even without ownership data. By default, `--auto` only redeems already-revealed keys to preserve gift links for games you might want to give away. Use this flag if you don't care about gift links and want everything redeemed. |
+| `--humble-cookies-file PATH` | Use a Netscape-format cookies.txt file for Humble instead of logging in. |
+| `--steam-cookies-file PATH` | Use a Netscape-format cookies.txt file for Steam instead of logging in. |
+| `--only-expiring` | Export or auto-redeem only games with a Humble expiry date. |
 
 ## Portable Binary
 
-The binaries are provided for convenience — you don't need them if you have Python installed. Just clone the repo, `pip install -r requirements.txt`, and run `python steam_redeem.py` directly.
+The binaries are provided for convenience — you don't need them if you have Python installed. Just clone the repo, `pip install .`, and run `python steam_redeem.py` directly.
 
 Pre-built Windows, macOS, and Linux binaries are available on the [Releases](../../releases) page for those who don't want to install Python or manage dependencies.
 
@@ -153,7 +164,7 @@ Pre-built Windows, macOS, and Linux binaries are available on the [Releases](../
 ### Build from source
 
 ```bash
-pip install -r requirements.txt pyinstaller
+pip install . pyinstaller
 pyinstaller steam-redeemer.spec
 # Binary in dist/
 ```

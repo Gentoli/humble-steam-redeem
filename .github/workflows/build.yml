@@ -36,7 +36,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
+        run: pip install . pyinstaller
 
       - name: Smoke test (source)
         run: python smoke_test.py
