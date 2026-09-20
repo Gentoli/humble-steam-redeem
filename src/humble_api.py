@@ -345,8 +345,8 @@ def _expiry_entries(node: Any) -> list[dict[str, Any]]:
         expiration, expiration_at = parsed
         custom_entry = dict(entry)
         custom_entry[_EXPIRATION_FIELD] = expiration
-        custom_entry["is_expired"] = entry.get("is_expired", False) or (
-            expiration_at <= now
+        custom_entry["is_expired"] = entry.get(
+            "is_expired", expiration_at <= now
         )
         custom_entries.append(custom_entry)
     entries.extend(custom_entries)
