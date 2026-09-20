@@ -20,6 +20,7 @@ from src.humble_api import (
     HUMBLE_SUB_PAGE,
     filter_expiring_keys,
     get_choices,
+    get_steam_expiration,
 )
 from src.redeemer import redeem_steam_keys
 from src.utils import (
@@ -52,9 +53,8 @@ class _CountingCheckbox(CheckboxPrompt):
 
 
 def _choice_expiration(choice: dict[str, Any]) -> str | None:
-    """Return the first expiry date exposed by a Choice game."""
-    expiration = next(find_dict_keys(choice, "expiration_date|datetime"), None)
-    return str(expiration) if expiration else None
+    """Return the expiry date from the Choice game's Steam key entry."""
+    return get_steam_expiration(choice)
 
 
 def _choice_label(choice: dict[str, Any]) -> str:

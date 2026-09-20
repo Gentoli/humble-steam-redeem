@@ -200,11 +200,61 @@ _EXPIRY_IDENTIFIER_FIELDS = (
 def _has_unexpired_expiry(node: Any) -> bool:
     """Return whether *node* contains an unexpired key with an expiry date."""
     return any(
-        isinstance(game, dict)
-        and game.get(_EXPIRATION_FIELD)
-        and not game.get("is_expired", False)
-        for game in find_dict_keys(node, _EXPIRATION_FIELD, parent=True)
+        entry.get(_EXPIRATION_FIELD) and not entry.get("is_expired", False)
+        for entry in _expiry_entries(node)
     )
+
+
+def _is_steam_expiry_entry(entry: dict[str, Any]) -> bool:
+    """Return whether an expiry-bearing entry describes a Steam key."""
+    key_type = entry.get("key_type")
+    machine_name = entry.get("machine_name")
+    return (
+        str(key_type).casefold() == "steam"
+        or (
+            isinstance(machine_name, str)
+            and machine_name.casefold().endswith("_steam")
+        )
+        or entry.get("steam_app_id") is not None
+    )
+
+
+def _looks_like_key_entry(entry: dict[str, Any]) -> bool:
+    """Return whether an expiry-bearing entry has platform/key metadata."""
+    return any(
+        field in entry
+        for field in (
+            "key_type",
+            "machine_name",
+            "gamekey",
+            "steam_app_id",
+            "is_expired",
+            "num_days_until_expired",
+        )
+    )
+
+
+def _expiry_entries(node: Any) -> list[dict[str, Any]]:
+    """Return expiry entries, preferring Steam keys when platforms are mixed."""
+    entries = [
+        entry
+        for entry in find_dict_keys(node, _EXPIRATION_FIELD, parent=True)
+        if isinstance(entry, dict)
+    ]
+    key_entries = [entry for entry in entries if _looks_like_key_entry(entry)]
+    steam_entries = [entry for entry in key_entries if _is_steam_expiry_entry(entry)]
+    if key_entries:
+        return steam_entries
+    return entries
+
+
+def get_steam_expiration(node: Any) -> str | None:
+    """Return the expiry date from the relevant Steam key entry, if present."""
+    for entry in _expiry_entries(node):
+        expiration = entry.get(_EXPIRATION_FIELD)
+        if expiration:
+            return str(expiration)
+    return None
 
 
 def get_expiring_game_identifiers(

@@ -3,7 +3,7 @@
 import io
 import json
 from contextlib import redirect_stderr
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 import src.chooser as chooser
 import src.__main__ as app
@@ -82,11 +82,17 @@ def _choice_data(*games):
 
 def test_only_expiring_skips_non_expiring_and_expired_months():
     progress = []
+    epic_only = _game("Epic Only Game", expiration="2026-12-01T00:00:00")
+    epic_only["tpkds"][0].update(
+        machine_name="epic_only_key",
+        key_type="epic_keyless",
+    )
     session = _Session(
         {
             "mixed": _choice_data(
                 _game("Future Game", expiration="2026-12-01T00:00:00"),
                 _game("No Expiry"),
+                epic_only,
             ),
             "expired": _choice_data(
                 _game(
@@ -217,6 +223,21 @@ def test_choice_label_ends_with_expiry():
     assert label.endswith("exp: 2026-12-01T00:00:00")
 
 
+def test_choice_label_uses_steam_expiry_when_tpkds_have_multiple_platforms():
+    choice = _game("Future Game", expiration="2026-12-01T00:00:00")
+    choice["tpkds"].insert(
+        0,
+        {
+            "machine_name": "future_game_epic",
+            "key_type": "epic_keyless",
+            "expiration_date|datetime": "2099-01-01T00:00:00",
+            "is_expired": False,
+        },
+    )
+
+    assert chooser._choice_expiration(choice) == "2026-12-01T00:00:00"
+
+
 def test_redeem_all_prompt_shows_game_list():
     month = {
         "available_choices": [
@@ -314,6 +335,52 @@ def test_cli_parses_start_bundle_flag():
     assert args.choice_start == "november-2023"
 
 
+def test_cli_passes_start_bundle_to_choice_mode():
+    class _Session:
+        def get(self, url):
+            class _Response:
+                def json(self):
+                    return []
+
+            return _Response()
+
+    args = type(
+        "Args",
+        (),
+        {
+            "auto": False,
+            "humble_cookies": None,
+            "steam_cookies": None,
+            "only_expiring": False,
+            "choice_start": "november-2023",
+        },
+    )()
+    session = _Session()
+
+    with (
+        patch.object(app, "_parse_args", return_value=args),
+        patch("src.humble_api.humble_login"),
+        patch.object(app.cloudscraper, "CloudScraper", return_value=session),
+        patch.object(app, "_fetch_order_details", return_value=([], [])),
+        patch.object(app, "prompt_mode", return_value="3"),
+        patch.object(app, "humble_chooser_mode") as chooser_mode,
+        patch.object(app.sys, "exit", side_effect=SystemExit),
+        patch("builtins.open", mock_open()),
+    ):
+        try:
+            app.main([])
+        except SystemExit:
+            pass
+
+    chooser_mode.assert_called_once_with(
+        session,
+        [],
+        steam_cookies=None,
+        only_expiring=False,
+        start_bundle="november-2023",
+    )
+
+
 def test_choice_order_refresh_handles_non_json_response():
     class _Response:
         status_code = 403
@@ -404,10 +471,12 @@ if __name__ == "__main__":
     test_unknown_start_bundle_is_reported_without_fetching_pages()
     test_chooser_fetches_next_month_after_current_view()
     test_choice_label_ends_with_expiry()
+    test_choice_label_uses_steam_expiry_when_tpkds_have_multiple_platforms()
     test_redeem_all_prompt_shows_game_list()
     test_choose_games_uses_order_key_and_ajax_headers()
     test_choose_games_marks_non_json_response_as_failed()
     test_cli_parses_start_bundle_flag()
+    test_cli_passes_start_bundle_to_choice_mode()
     test_choice_order_refresh_handles_non_json_response()
     test_choice_mode_skips_failed_order_refresh()
     test_cli_returns_interrupt_status_without_traceback()

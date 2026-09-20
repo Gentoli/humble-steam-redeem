@@ -175,7 +175,6 @@ def main(argv: list[str] | None = None) -> None:
                 order_details,
                 steam_cookies=args.steam_cookies,
                 only_expiring=args.only_expiring,
-                start_bundle=args.choice_start,
             )
             sys.exit()
         if desired_mode == "3":
@@ -184,6 +183,7 @@ def main(argv: list[str] | None = None) -> None:
                 order_details,
                 steam_cookies=args.steam_cookies,
                 only_expiring=args.only_expiring,
+                start_bundle=args.choice_start,
             )
             sys.exit()
 
