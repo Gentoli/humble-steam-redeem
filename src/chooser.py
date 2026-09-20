@@ -30,6 +30,7 @@ from src.utils import (
     print_info,
     print_rule,
     print_success,
+    print_warning,
     prompt_yes_no,
 )
 
@@ -81,7 +82,11 @@ def choose_games(
     *,
     order_gamekey: str | None = None,
 ) -> list[str]:
-    """Submit chosen games for a Humble Choice month. Returns list of failed titles."""
+    """Submit chosen games for a Humble Choice month.
+
+    The Choice endpoint expects the month's order gamekey, not the individual
+    game's reveal key. Returns a list of failed titles.
+    """
     failed: list[str] = []
     headers = {
         **HUMBLE_HEADERS,
@@ -351,16 +356,19 @@ def humble_chooser_mode(
                     f"Couldn't refresh {len(try_redeem_keys) - len(updated_monthlies)} "
                     "selected Choice order(s); continuing with the rest."
                 )
-            chosen_keys = list(
-                find_dict_keys(updated_monthlies, "steam_app_id", True)
-            )
-            if only_expiring:
-                original_length = len(chosen_keys)
-                chosen_keys = filter_expiring_keys(
-                    humble_session, updated_monthlies, chosen_keys
+            if updated_monthlies:
+                chosen_keys = list(
+                    find_dict_keys(updated_monthlies, "steam_app_id", True)
                 )
-                print_info(
-                    f"Filtered {original_length - len(chosen_keys)} keys without "
-                    "an expiry date"
+                if only_expiring:
+                    original_length = len(chosen_keys)
+                    chosen_keys = filter_expiring_keys(
+                        humble_session, updated_monthlies, chosen_keys
+                    )
+                    print_info(
+                        f"Filtered {original_length - len(chosen_keys)} keys without "
+                        "an expiry date"
+                    )
+                redeem_steam_keys(
+                    humble_session, chosen_keys, steam_cookies=steam_cookies
                 )
-            redeem_steam_keys(humble_session, chosen_keys, steam_cookies=steam_cookies)

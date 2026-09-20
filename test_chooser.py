@@ -193,6 +193,23 @@ def test_choose_games_uses_order_key_and_ajax_headers():
     assert headers["X-Requested-With"] == "XMLHttpRequest"
 
 
+def test_choose_games_marks_non_json_response_as_failed():
+    class _Response:
+        status_code = 403
+        headers = {"Content-Type": "text/html"}
+
+        def json(self):
+            raise ValueError("not JSON")
+
+    class _Session:
+        def post(self, url, *, data, headers):
+            return _Response()
+
+    assert chooser.choose_games(
+        _Session(), "mixed", "initial", [_game("Future Game")]
+    ) == ["Future Game"]
+
+
 def test_choice_order_refresh_handles_non_json_response():
     class _Response:
         status_code = 403
