@@ -35,9 +35,9 @@ def _month(choice_url):
             "category": "subscriptioncontent",
             "choice_url": choice_url,
             "human_name": choice_url,
+            "is_subs_v3_product": True,
         },
         "choices_remaining": 0,
-        "is_subs_v3_product": True,
         "tpkd_dict": {},
     }
 
