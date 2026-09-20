@@ -100,7 +100,9 @@ def humble_login(
         }
         HUMBLE_HEADERS["CSRF-Prevention-Token"] = session.cookies["csrf_cookie"]
 
-        r = session.post(HUMBLE_LOGIN_API, data=payload, headers=HUMBLE_HEADERS)
+        r = session.post(
+            HUMBLE_LOGIN_API, data=payload, headers=HUMBLE_HEADERS.copy()
+        )
         login_json = r.json()
 
         if "errors" in login_json and "username" in login_json["errors"]:
@@ -116,7 +118,9 @@ def humble_login(
                 )
                 payload["guard"] = humble_guard_code.upper()
                 auth_response = session.post(
-                    HUMBLE_LOGIN_API, data=payload, headers=HUMBLE_HEADERS
+                    HUMBLE_LOGIN_API,
+                    data=payload,
+                    headers=HUMBLE_HEADERS.copy(),
                 )
                 login_json = auth_response.json()
 
@@ -136,7 +140,9 @@ def humble_login(
                 code = Prompt.ask("[bold cyan]2FA code[/bold cyan]")
                 payload["code"] = code
                 auth_response = session.post(
-                    HUMBLE_LOGIN_API, data=payload, headers=HUMBLE_HEADERS
+                    HUMBLE_LOGIN_API,
+                    data=payload,
+                    headers=HUMBLE_HEADERS.copy(),
                 )
                 login_json = auth_response.json()
             elif "errors" in login_json:
@@ -158,7 +164,9 @@ def redeem_humble_key(session, tpk: dict[str, Any]) -> str:
         "key": tpk["gamekey"],
         "keyindex": tpk["keyindex"],
     }
-    resp = session.post(HUMBLE_REDEEM_API, data=payload, headers=HUMBLE_HEADERS)
+    resp = session.post(
+        HUMBLE_REDEEM_API, data=payload, headers=HUMBLE_HEADERS.copy()
+    )
 
     resp_json = resp.json()
     if resp.status_code != 200 or "error_msg" in resp_json or not resp_json["success"]:
