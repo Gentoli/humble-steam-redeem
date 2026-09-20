@@ -408,12 +408,13 @@ def test_choose_games_uses_order_key_and_ajax_headers():
     url, payload, headers = requests[0]
     assert url == HUMBLE_CHOOSE_CONTENT
     assert payload["gamekey"] == "order-key"
-    assert payload["chosen_identifiers[]"] == "future_game"
+    assert payload["chosen_identifiers[]"] == ["future_game"]
+    assert payload["is_gift"] == "false"
     assert headers["Referer"] == f"{HUMBLE_SUB_PAGE}mixed"
     assert headers["X-Requested-With"] == "XMLHttpRequest"
 
 
-def test_choose_games_does_not_reuse_mutated_headers():
+def test_choose_games_batches_identifiers_and_isolates_headers():
     requests = []
 
     class _Response:
@@ -425,26 +426,55 @@ def test_choose_games_does_not_reuse_mutated_headers():
 
     class _Session:
         def post(self, url, *, data, headers):
-            requests.append(headers)
-            if len(requests) == 1:
-                header_iterator = iter(headers)
-                next(header_iterator)
-                headers["Injected-Header"] = "unexpected"
-                next(header_iterator)
+            requests.append((data, headers))
+            headers["Injected-Header"] = "unexpected"
             return _Response()
 
-    log = io.StringIO()
-    with redirect_stderr(log):
-        failed = chooser.choose_games(
+    failed = chooser.choose_games(
+        _Session(),
+        "mixed",
+        "initial",
+        [_game("First Game"), _game("Second Game")],
+    )
+
+    assert failed == []
+    assert len(requests) == 1
+    payload, headers = requests[0]
+    assert payload["chosen_identifiers[]"] == ["first_game", "second_game"]
+    assert headers is not chooser.HUMBLE_HEADERS
+    assert "Injected-Header" not in chooser.HUMBLE_HEADERS
+
+
+def test_choose_games_ignores_already_made_choice_failure():
+    class _Response:
+        status_code = 200
+        headers = {"Content-Type": "application/json"}
+
+        def json(self):
+            return {
+                "errors": {
+                    "dummy": [
+                        "You've already made this choice. Please refresh the page "
+                        "to see your choice."
+                    ]
+                },
+                "success": False,
+            }
+
+    class _Session:
+        def post(self, url, *, data, headers):
+            assert data["chosen_identifiers[]"] == ["gatekeeper"]
+            return _Response()
+
+    assert (
+        chooser.choose_games(
             _Session(),
             "mixed",
             "initial",
-            [_game("First Game"), _game("Second Game")],
+            [_game("Gatekeeper")],
         )
-
-    assert failed == ["First Game"]
-    assert requests[0] is not requests[1]
-    assert "Injected-Header" not in requests[1]
+        == []
+    )
 
 
 def test_redeem_humble_key_copies_shared_headers():
@@ -676,7 +706,8 @@ if __name__ == "__main__":
     test_malformed_custom_instructions_expiry_is_ignored()
     test_redeem_all_prompt_shows_game_list()
     test_choose_games_uses_order_key_and_ajax_headers()
-    test_choose_games_does_not_reuse_mutated_headers()
+    test_choose_games_batches_identifiers_and_isolates_headers()
+    test_choose_games_ignores_already_made_choice_failure()
     test_redeem_humble_key_copies_shared_headers()
     test_choose_games_marks_non_json_response_as_failed()
     test_cli_parses_start_bundle_flag()

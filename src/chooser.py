@@ -130,7 +130,7 @@ def choose_games(
     *,
     order_gamekey: str | None = None,
 ) -> list[str]:
-    """Submit chosen games for a Humble Choice month.
+    """Submit chosen games in one batch request for a Humble Choice month.
 
     The Choice endpoint expects the month's order gamekey, not the individual
     game's reveal key. Returns a list of failed titles.
@@ -142,75 +142,89 @@ def choose_games(
         "Referer": f"{HUMBLE_SUB_PAGE}{choice_month_name}",
         "X-Requested-With": "XMLHttpRequest",
     }
+    api_choices = [choice for choice in chosen if "tpkds" in choice]
     for choice in chosen:
         display_name = choice["display_item_machine_name"]
         if "tpkds" not in choice:
             url = f"{HUMBLE_SUB_PAGE}{choice_month_name}/{display_name}"
             console.print(f"[cyan]Open in browser:[/cyan] {url}")
             webbrowser.open(url)
-        else:
-            payload = {
-                "gamekey": order_gamekey or choice["tpkds"][0]["gamekey"],
-                "parent_identifier": identifier,
-                "chosen_identifiers[]": display_name,
-                "is_multikey_and_from_choice_modal": "false",
-            }
-            request_headers = dict(base_headers)
-            response = None
-            try:
-                response = humble_session.post(
-                    HUMBLE_CHOOSE_CONTENT, data=payload, headers=request_headers
-                )
-                res = response.json()
-            except ValueError as e:
-                status = getattr(response, "status_code", "unknown")
-                response_headers = getattr(response, "headers", {}) or {}
-                content_type = (
-                    response_headers.get("Content-Type")
-                    or response_headers.get("content-type")
-                    or "unknown"
-                )
-                message = (
-                    f"Error choosing {escape(choice['title'])}: Humble returned "
-                    f"a non-JSON response (HTTP {status}, {content_type})"
-                )
-                print_error(message)
-                _log_full_response_error(
-                    f"choose_games non-JSON response for {choice['title']!r}",
-                    response,
-                    e,
-                    request_url=HUMBLE_CHOOSE_CONTENT,
-                    request_headers=request_headers,
-                    request_body=payload,
-                )
-                failed.append(choice["title"])
-                continue
-            except Exception as e:
-                print_error(f"Error choosing {escape(choice['title'])}: {e}")
-                _log_full_response_error(
-                    f"choose_games exception for {choice['title']!r}",
-                    response,
-                    e,
-                    request_url=HUMBLE_CHOOSE_CONTENT,
-                    request_headers=request_headers,
-                    request_body=payload,
-                )
-                print(
-                    f"choose_games exception for {choice['title']!r}: {e!r}",
-                    file=sys.stderr,
-                )
-                failed.append(choice["title"])
-                continue
-            if not isinstance(res, dict) or not res.get("success"):
-                print_error(f"Error choosing {escape(choice['title'])}")
-                console.print(res)
-                print(
-                    f"choose_games failure for {choice['title']!r}: {res!r}",
-                    file=sys.stderr,
-                )
-                failed.append(choice["title"])
-            else:
-                print_success(f"Chose game {escape(choice['title'])}")
+    if not api_choices:
+        return failed
+
+    payload = {
+        "gamekey": order_gamekey or api_choices[0]["tpkds"][0]["gamekey"],
+        "parent_identifier": identifier,
+        "chosen_identifiers[]": [
+            choice["display_item_machine_name"] for choice in api_choices
+        ],
+        "is_gift": "false",
+    }
+    request_headers = dict(base_headers)
+    response = None
+    try:
+        response = humble_session.post(
+            HUMBLE_CHOOSE_CONTENT, data=payload, headers=request_headers
+        )
+        res = response.json()
+    except ValueError as e:
+        status = getattr(response, "status_code", "unknown")
+        response_headers = getattr(response, "headers", {}) or {}
+        content_type = (
+            response_headers.get("Content-Type")
+            or response_headers.get("content-type")
+            or "unknown"
+        )
+        for choice in api_choices:
+            print_error(
+                f"Error choosing {escape(choice['title'])}: Humble returned "
+                f"a non-JSON response (HTTP {status}, {content_type})"
+            )
+            failed.append(choice["title"])
+        _log_full_response_error(
+            "choose_games non-JSON batch response",
+            response,
+            e,
+            request_url=HUMBLE_CHOOSE_CONTENT,
+            request_headers=request_headers,
+            request_body=payload,
+        )
+        return failed
+    except Exception as e:
+        for choice in api_choices:
+            print_error(f"Error choosing {escape(choice['title'])}: {e}")
+            failed.append(choice["title"])
+        _log_full_response_error(
+            "choose_games batch exception",
+            response,
+            e,
+            request_url=HUMBLE_CHOOSE_CONTENT,
+            request_headers=request_headers,
+            request_body=payload,
+        )
+        print(f"choose_games batch exception: {e!r}", file=sys.stderr)
+        return failed
+
+    already_chosen = (
+        isinstance(res, dict)
+        and not res.get("success")
+        and "You've already made this choice. Please refresh the page to see "
+        "your choice."
+        in str(res.get("errors", {}))
+    )
+    if isinstance(res, dict) and (res.get("success") or already_chosen):
+        for choice in api_choices:
+            print_success(f"Chose game {escape(choice['title'])}")
+        return failed
+
+    console.print(res)
+    for choice in api_choices:
+        print_error(f"Error choosing {escape(choice['title'])}")
+        print(
+            f"choose_games failure for {choice['title']!r}: {res!r}",
+            file=sys.stderr,
+        )
+        failed.append(choice["title"])
     return failed
 
 
