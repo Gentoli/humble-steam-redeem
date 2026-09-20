@@ -105,7 +105,9 @@ def humble_chooser_mode(
 ) -> None:
     """Interactive Humble Choice game selection UI."""
     try_redeem_keys: list[str] = []
-    months = get_choices(humble_session, order_details)
+    months = get_choices(
+        humble_session, order_details, only_expiring=only_expiring
+    )
     first = True
     redeem_keys = False
 
@@ -174,8 +176,7 @@ def humble_chooser_mode(
                         invalid_message=f"Pick at most {remaining}",
                     ).execute()
                 except KeyboardInterrupt:
-                    ready = True
-                    break
+                    raise
 
                 if not selected_indexes:
                     next_action = inquirer.select(

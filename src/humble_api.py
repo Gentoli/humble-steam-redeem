@@ -197,6 +197,16 @@ _EXPIRY_IDENTIFIER_FIELDS = (
 )
 
 
+def _has_unexpired_expiry(node: Any) -> bool:
+    """Return whether *node* contains an unexpired key with an expiry date."""
+    return any(
+        isinstance(game, dict)
+        and game.get(_EXPIRATION_FIELD)
+        and not game.get("is_expired", False)
+        for game in find_dict_keys(node, _EXPIRATION_FIELD, parent=True)
+    )
+
+
 def get_expiring_game_identifiers(
     humble_session, order_details: list[dict]
 ) -> dict[str, set[str]]:
@@ -218,7 +228,7 @@ def get_expiring_game_identifiers(
             continue
 
         for game in find_dict_keys(choice_data, _EXPIRATION_FIELD, parent=True):
-            if not isinstance(game, dict) or not game.get(_EXPIRATION_FIELD):
+            if not _has_unexpired_expiry(game):
                 continue
             for field in _EXPIRY_IDENTIFIER_FIELDS:
                 value = game.get(field)
@@ -236,7 +246,7 @@ def filter_expiring_keys(
     expiring_keys: list[dict] = []
 
     for key in keys:
-        if key.get(_EXPIRATION_FIELD):
+        if _has_unexpired_expiry(key):
             expiring_keys.append(key)
             continue
         if any(
@@ -251,7 +261,10 @@ def filter_expiring_keys(
 
 
 def get_choices(
-    humble_session, order_details: list[dict]
+    humble_session,
+    order_details: list[dict],
+    *,
+    only_expiring: bool = False,
 ) -> Generator[dict, None, None]:
     """Yield Humble Choice months that still have unchosen games.
 
@@ -259,7 +272,8 @@ def get_choices(
     "unlock everything" months (subs v3). v3 months report
     ``choices_remaining == 0`` and expose their games under
     ``contentChoiceData["game_data"]`` rather than ``content_choices``, so they
-    are gated and parsed separately below.
+    are gated and parsed separately below. When *only_expiring* is true, only
+    games with an expiry date that have not expired are considered.
     """
     months = [
         month
@@ -306,6 +320,13 @@ def get_choices(
                         identifier = key
 
             choice_options = content_choice_data[identifier]["content_choices"]
+
+        if only_expiring:
+            choice_options = {
+                name: game
+                for name, game in choice_options.items()
+                if _has_unexpired_expiry(game)
+            }
 
         month["available_choices"] = [
             game[1]
