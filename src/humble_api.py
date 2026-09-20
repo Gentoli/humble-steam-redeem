@@ -265,6 +265,7 @@ def get_choices(
     order_details: list[dict],
     *,
     only_expiring: bool = False,
+    start_bundle: str | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> Generator[dict, None, None]:
     """Yield Humble Choice months that still have unchosen games.
@@ -274,7 +275,9 @@ def get_choices(
     ``choices_remaining == 0`` and expose their games under
     ``contentChoiceData["game_data"]`` rather than ``content_choices``, so they
     are gated and parsed separately below. When *only_expiring* is true, only
-    games with an expiry date that have not expired are considered.
+    games with an expiry date that have not expired are considered. When
+    *start_bundle* is set, iteration begins at that choice URL after sorting
+    months by their ``created`` value in ascending order.
     """
     months = [
         month
@@ -284,6 +287,20 @@ def get_choices(
     ]
 
     months = sorted(months, key=lambda m: m.get("created", ""))
+    if start_bundle is not None:
+        start_index = next(
+            (
+                index
+                for index, month in enumerate(months)
+                if month["product"].get("choice_url") == start_bundle
+            ),
+            None,
+        )
+        if start_index is None:
+            raise ValueError(
+                f"Choice start bundle {start_bundle!r} was not found in your orders."
+            )
+        months = months[start_index:]
     total_months = len(months)
 
     for index, month in enumerate(months, 1):

@@ -74,6 +74,31 @@ def _choice_label(choice: dict[str, Any]) -> str:
     return "".join(parts)
 
 
+def _log_full_response_error(
+    action: str, response: Any, error: BaseException
+) -> None:
+    """Write the complete non-JSON response to the error log."""
+    status = getattr(response, "status_code", "unknown")
+    url = getattr(response, "url", "unknown")
+    response_headers = getattr(response, "headers", {}) or {}
+    content_type = (
+        response_headers.get("Content-Type")
+        or response_headers.get("content-type")
+        or "unknown"
+    )
+    body = getattr(response, "text", "")
+    if not isinstance(body, str) or not body:
+        body = "<empty response body>"
+    print(
+        f"{action}: {error!r}\n"
+        f"URL: {url}\n"
+        f"HTTP {status}, {content_type}\n"
+        f"Response body:\n{body}\n"
+        "--- end response ---",
+        file=sys.stderr,
+    )
+
+
 def choose_games(
     humble_session,
     choice_month_name: str,
@@ -113,7 +138,7 @@ def choose_games(
                     HUMBLE_CHOOSE_CONTENT, data=payload, headers=headers
                 )
                 res = response.json()
-            except ValueError:
+            except ValueError as e:
                 status = getattr(response, "status_code", "unknown")
                 response_headers = getattr(response, "headers", {}) or {}
                 content_type = (
@@ -126,10 +151,10 @@ def choose_games(
                     f"a non-JSON response (HTTP {status}, {content_type})"
                 )
                 print_error(message)
-                print(
-                    f"choose_games non-JSON response for {choice['title']!r}: "
-                    f"HTTP {status}, {content_type}",
-                    file=sys.stderr,
+                _log_full_response_error(
+                    f"choose_games non-JSON response for {choice['title']!r}",
+                    response,
+                    e,
                 )
                 failed.append(choice["title"])
                 continue
@@ -162,7 +187,7 @@ def _refresh_choice_order(humble_session, order: str) -> dict[str, Any] | None:
             f"{HUMBLE_ORDER_DETAILS_API}{order}?all_tpkds=true"
         )
         data = response.json()
-    except ValueError:
+    except ValueError as e:
         status = getattr(response, "status_code", "unknown")
         response_headers = getattr(response, "headers", {}) or {}
         content_type = (
@@ -175,10 +200,10 @@ def _refresh_choice_order(humble_session, order: str) -> dict[str, Any] | None:
             f"a non-JSON response (HTTP {status}, {content_type})"
         )
         print_error(message)
-        print(
-            f"choice order refresh non-JSON response for {order!r}: "
-            f"HTTP {status}, {content_type}",
-            file=sys.stderr,
+        _log_full_response_error(
+            f"choice order refresh non-JSON response for {order!r}",
+            response,
+            e,
         )
         return None
     except Exception as e:
@@ -205,6 +230,7 @@ def humble_chooser_mode(
     *,
     steam_cookies: str | Path | None = None,
     only_expiring: bool = False,
+    start_bundle: str | None = None,
 ) -> None:
     """Interactive Humble Choice game selection UI."""
     try_redeem_keys: list[str] = []
@@ -219,6 +245,7 @@ def humble_chooser_mode(
             humble_session,
             order_details,
             only_expiring=only_expiring,
+            start_bundle=start_bundle,
             progress=update_loading_status,
         )
     )
@@ -234,6 +261,9 @@ def humble_chooser_mode(
                 month = next(choice_months)
             except StopIteration:
                 break
+            except ValueError as e:
+                print_error(str(e))
+                return
             finally:
                 loading_status = None
 

@@ -135,6 +135,7 @@ Redeem new keys every 6 hours:
 | `--humble-cookies-file PATH` | Use a Netscape-format cookies.txt file for Humble instead of logging in. |
 | `--steam-cookies-file PATH` | Use a Netscape-format cookies.txt file for Steam instead of logging in. |
 | `--only-expiring` | Export, auto-redeem, or choose only games with an unexpired Humble expiry date. |
+| `--start-bundle BUNDLE` | In the Humble Choice chooser, start at this bundle slug (for example, `november-2023`). Months are ordered oldest to newest. |
 
 ## Portable Binary
 

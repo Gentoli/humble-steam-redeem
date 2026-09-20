@@ -1,6 +1,8 @@
 """Regression tests for Humble Choice filtering and interruption handling."""
 
+import io
 import json
+from contextlib import redirect_stderr
 from unittest.mock import patch
 
 import src.chooser as chooser
@@ -35,8 +37,8 @@ class _Session:
         return _Response(self.pages[url.removeprefix(HUMBLE_SUB_PAGE)])
 
 
-def _month(choice_url):
-    return {
+def _month(choice_url, *, created=None):
+    month = {
         "product": {
             "category": "subscriptioncontent",
             "choice_url": choice_url,
@@ -46,6 +48,9 @@ def _month(choice_url):
         "choices_remaining": 0,
         "tpkd_dict": {},
     }
+    if created is not None:
+        month["created"] = created
+    return month
 
 
 def _game(title, *, expiration=None, is_expired=False):
@@ -111,6 +116,51 @@ def test_only_expiring_skips_non_expiring_and_expired_months():
     assert any("Found 1 available games in mixed" in action for action in progress)
 
 
+def test_choice_months_are_oldest_first_from_start_bundle():
+    session = _Session(
+        {
+            "january-2023": _choice_data(_game("January Game")),
+            "november-2023": _choice_data(_game("November Game")),
+            "march-2024": _choice_data(_game("March Game")),
+        }
+    )
+    months = list(
+        get_choices(
+            session,
+            [
+                _month("march-2024", created="2024-03-01"),
+                _month("january-2023", created="2023-01-01"),
+                _month("november-2023", created="2023-11-01"),
+            ],
+            start_bundle="november-2023",
+        )
+    )
+
+    assert [month["product"]["choice_url"] for month in months] == [
+        "november-2023",
+        "march-2024",
+    ]
+
+
+def test_unknown_start_bundle_is_reported_without_fetching_pages():
+    session = _Session({"january-2023": _choice_data(_game("January Game"))})
+
+    try:
+        list(
+            get_choices(
+                session,
+                [_month("january-2023", created="2023-01-01")],
+                start_bundle="november-2023",
+            )
+        )
+    except ValueError as e:
+        assert str(e) == (
+            "Choice start bundle 'november-2023' was not found in your orders."
+        )
+    else:
+        raise AssertionError("Unknown start bundle should fail clearly")
+
+
 def test_chooser_fetches_next_month_after_current_view():
     events = []
 
@@ -126,6 +176,8 @@ def test_chooser_fetches_next_month_after_current_view():
     second_month = _view_month("Second Month")
 
     def _lazy_choices(*args, **kwargs):
+        assert kwargs["start_bundle"] == "november-2023"
+
         def _months():
             events.append("first month fetched")
             yield first_month
@@ -146,7 +198,7 @@ def test_chooser_fetches_next_month_after_current_view():
         patch.object(chooser, "choose_games", return_value=[]),
         patch.object(chooser, "cls"),
     ):
-        chooser.humble_chooser_mode(object(), [])
+        chooser.humble_chooser_mode(object(), [], start_bundle="november-2023")
 
     assert events == ["first month fetched", "second month fetched"]
 
@@ -237,6 +289,8 @@ def test_choose_games_marks_non_json_response_as_failed():
     class _Response:
         status_code = 403
         headers = {"Content-Type": "text/html"}
+        url = HUMBLE_CHOOSE_CONTENT
+        text = "<html>Cloudflare challenge details</html>"
 
         def json(self):
             raise ValueError("not JSON")
@@ -245,9 +299,19 @@ def test_choose_games_marks_non_json_response_as_failed():
         def post(self, url, *, data, headers):
             return _Response()
 
-    assert chooser.choose_games(
-        _Session(), "mixed", "initial", [_game("Future Game")]
-    ) == ["Future Game"]
+    log = io.StringIO()
+    with redirect_stderr(log):
+        assert chooser.choose_games(
+            _Session(), "mixed", "initial", [_game("Future Game")]
+        ) == ["Future Game"]
+    output = log.getvalue()
+    assert "HTTP 403, text/html" in output
+    assert "Cloudflare challenge details" in output
+
+
+def test_cli_parses_start_bundle_flag():
+    args = app._parse_args(["--start-bundle", "november-2023"])
+    assert args.choice_start == "november-2023"
 
 
 def test_choice_order_refresh_handles_non_json_response():
@@ -336,10 +400,14 @@ def test_ctrl_c_exits_chooser_instead_of_advancing():
 
 if __name__ == "__main__":
     test_only_expiring_skips_non_expiring_and_expired_months()
+    test_choice_months_are_oldest_first_from_start_bundle()
+    test_unknown_start_bundle_is_reported_without_fetching_pages()
     test_chooser_fetches_next_month_after_current_view()
     test_choice_label_ends_with_expiry()
     test_redeem_all_prompt_shows_game_list()
     test_choose_games_uses_order_key_and_ajax_headers()
+    test_choose_games_marks_non_json_response_as_failed()
+    test_cli_parses_start_bundle_flag()
     test_choice_order_refresh_handles_non_json_response()
     test_choice_mode_skips_failed_order_refresh()
     test_cli_returns_interrupt_status_without_traceback()

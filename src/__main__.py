@@ -78,6 +78,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Only export or auto-redeem games with a Humble expiry date.",
     )
+    parser.add_argument(
+        "--start-bundle",
+        "--choice-start",
+        dest="choice_start",
+        metavar="BUNDLE",
+        help="With the Humble Choice chooser, start at this bundle slug "
+        "(for example, november-2023) and continue through newer bundles.",
+    )
     return parser.parse_args(argv)
 
 
@@ -167,6 +175,7 @@ def main(argv: list[str] | None = None) -> None:
                 order_details,
                 steam_cookies=args.steam_cookies,
                 only_expiring=args.only_expiring,
+                start_bundle=args.choice_start,
             )
             sys.exit()
         if desired_mode == "3":
