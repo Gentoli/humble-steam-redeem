@@ -75,9 +75,22 @@ def _choice_label(choice: dict[str, Any]) -> str:
 
 
 def _log_full_response_error(
-    action: str, response: Any, error: BaseException
+    action: str,
+    response: Any,
+    error: BaseException,
+    *,
+    request_url: str | None = None,
+    request_headers: Any = None,
+    request_body: Any = None,
 ) -> None:
-    """Write the complete non-JSON response to the error log."""
+    """Write the complete request and response to the error log."""
+    request = getattr(response, "request", None)
+    method = getattr(request, "method", None) or "POST"
+    actual_url = getattr(request, "url", None) or request_url
+    actual_headers = getattr(request, "headers", None) or request_headers
+    actual_body = getattr(request, "body", None)
+    if actual_body is None:
+        actual_body = request_body
     status = getattr(response, "status_code", "unknown")
     url = getattr(response, "url", "unknown")
     response_headers = getattr(response, "headers", {}) or {}
@@ -91,6 +104,10 @@ def _log_full_response_error(
         body = "<empty response body>"
     print(
         f"{action}: {error!r}\n"
+        f"Request: {method} {actual_url or 'unknown'}\n"
+        f"Request headers:\n{actual_headers or {}}\n"
+        f"Request body:\n{actual_body!r}\n"
+        "--- end request ---\n"
         f"URL: {url}\n"
         f"HTTP {status}, {content_type}\n"
         f"Response body:\n{body}\n"
@@ -155,6 +172,9 @@ def choose_games(
                     f"choose_games non-JSON response for {choice['title']!r}",
                     response,
                     e,
+                    request_url=HUMBLE_CHOOSE_CONTENT,
+                    request_headers=headers,
+                    request_body=payload,
                 )
                 failed.append(choice["title"])
                 continue

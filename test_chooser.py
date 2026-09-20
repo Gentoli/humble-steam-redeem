@@ -334,6 +334,16 @@ def test_choose_games_marks_non_json_response_as_failed():
         headers = {"Content-Type": "text/html"}
         url = HUMBLE_CHOOSE_CONTENT
         text = "<html>Cloudflare challenge details</html>"
+        request = type(
+            "Request",
+            (),
+            {
+                "method": "POST",
+                "url": HUMBLE_CHOOSE_CONTENT,
+                "headers": {"X-Test": "request-header"},
+                "body": "gamekey=order-key&chosen_identifiers%5B%5D=future_game",
+            },
+        )()
 
         def json(self):
             raise ValueError("not JSON")
@@ -348,6 +358,9 @@ def test_choose_games_marks_non_json_response_as_failed():
             _Session(), "mixed", "initial", [_game("Future Game")]
         ) == ["Future Game"]
     output = log.getvalue()
+    assert f"Request: POST {HUMBLE_CHOOSE_CONTENT}" in output
+    assert "X-Test': 'request-header" in output
+    assert "gamekey=order-key&chosen_identifiers%5B%5D=future_game" in output
     assert "HTTP 403, text/html" in output
     assert "Cloudflare challenge details" in output
 
