@@ -13,7 +13,10 @@ except Exception as e:
 
 try:
     import cloudscraper
+    from cloudscraper.tls_rotator import TLSFingerprintRotator
+
     cloudscraper.CloudScraper()
+    TLSFingerprintRotator(rotation_interval=10).get_fingerprint()
 except Exception as e:
     errors.append(f"cloudscraper: {e}")
 

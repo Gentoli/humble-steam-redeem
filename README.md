@@ -50,8 +50,16 @@ If you skip the QR code and use credentials with 2FA enabled, the tool shows a c
 
 ## Setup
 
+### Using [uv](https://docs.astral.sh/uv/)
+
 ```bash
-pip install -r requirements.txt
+uvx --from git+https://github.com/castanley/humble-steam-redeem.git humble-steam-redeem
+```
+
+### Using pip from a local checkout
+
+```bash
+pip install .
 ```
 
 ### Configuration
@@ -124,10 +132,15 @@ Redeem new keys every 6 hours:
 |------|-------------|
 | `--auto` | Non-interactive mode — requires valid saved sessions in `.state/` |
 | `--reveal-all` | With `--auto`: reveal and redeem unrevealed keys even without ownership data. By default, `--auto` only redeems already-revealed keys to preserve gift links for games you might want to give away. Use this flag if you don't care about gift links and want everything redeemed. |
+| `--humble-cookies-file PATH` | Use a Netscape-format cookies.txt file for Humble instead of logging in. |
+| `--steam-cookies-file PATH` | Use a Netscape-format cookies.txt file for Steam instead of logging in. |
+| `--user-agent USER_AGENT` | Use a custom User-Agent for Humble and Steam requests. |
+| `--only-expiring` | Export, auto-redeem, or choose only games with an unexpired Humble expiry date. |
+| `--start-bundle BUNDLE` | In the Humble Choice chooser, start at this bundle slug (for example, `november-2023`). Months are ordered oldest to newest. |
 
 ## Portable Binary
 
-The binaries are provided for convenience — you don't need them if you have Python installed. Just clone the repo, `pip install -r requirements.txt`, and run `python steam_redeem.py` directly.
+The binaries are provided for convenience — you don't need them if you have Python installed. Just clone the repo, `pip install .`, and run `python steam_redeem.py` directly.
 
 Pre-built Windows, macOS, and Linux binaries are available on the [Releases](../../releases) page for those who don't want to install Python or manage dependencies.
 
@@ -153,7 +166,7 @@ Pre-built Windows, macOS, and Linux binaries are available on the [Releases](../
 ### Build from source
 
 ```bash
-pip install -r requirements.txt pyinstaller
+pip install . pyinstaller
 pyinstaller steam-redeemer.spec
 # Binary in dist/
 ```
@@ -193,6 +206,6 @@ Delete `.state/` to force fresh logins. Delete `config.yaml` to reset settings.
 | `python-Levenshtein` | Fast string matching backend for fuzzywuzzy |
 | `requests` | HTTP client |
 | `requests-futures` | Concurrent order fetching |
-| `cloudscraper` | Bypasses Humble's CloudFlare protection |
+| `ai-cloudscraper` | Drop-in CloudScraper client with TLS fingerprint rotation for Humble's CloudFlare protection |
 | `rich` | Terminal UI (panels, spinners, tables, colors) |
 | `qrcode` | QR code generation for Steam mobile app login |

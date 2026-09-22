@@ -25,7 +25,9 @@ def load_steam_api_key() -> str | None:
     return key or None
 
 
-def fetch_app_list(api_key: str) -> list[dict[str, Any]]:
+def fetch_app_list(
+    api_key: str, *, user_agent: str | None = None
+) -> list[dict[str, Any]]:
     """Fetch full Steam app list using IStoreService/GetAppList (requires API key)."""
     all_apps: list[dict[str, Any]] = []
     last_appid = 0
@@ -39,10 +41,12 @@ def fetch_app_list(api_key: str) -> list[dict[str, Any]]:
         }
         if last_appid:
             params["last_appid"] = str(last_appid)
+        request_kwargs = {"params": params, "timeout": 30}
+        if user_agent:
+            request_kwargs["headers"] = {"User-Agent": user_agent}
         resp = requests.get(
             "https://api.steampowered.com/IStoreService/GetAppList/v1/",
-            params=params,
-            timeout=30,
+            **request_kwargs,
         )
         if resp.status_code != 200:
             raise Exception(f"IStoreService/GetAppList returned {resp.status_code}")
@@ -57,7 +61,9 @@ def fetch_app_list(api_key: str) -> list[dict[str, Any]]:
     return all_apps
 
 
-def get_owned_apps(steam_session, *, auto: bool = False) -> dict[int, str]:
+def get_owned_apps(
+    steam_session, *, auto: bool = False, user_agent: str | None = None
+) -> dict[int, str]:
     """Get the user's owned content from Steam. Returns {appid: name} dict."""
     owned_content = steam_session.get(STEAM_USERDATA_API).json()
     owned_app_ids = set(owned_content["rgOwnedPackages"] + owned_content["rgOwnedApps"])
@@ -67,7 +73,7 @@ def get_owned_apps(steam_session, *, auto: bool = False) -> dict[int, str]:
     if api_key:
         try:
             with console.status("Fetching Steam app list…", spinner="dots"):
-                app_list = fetch_app_list(api_key)
+                app_list = fetch_app_list(api_key, user_agent=user_agent)
             print_success(f"Fetched {len(app_list)} apps")
         except Exception as e:
             print_error(f"IStoreService/GetAppList error: {e}")
@@ -104,7 +110,7 @@ def get_owned_apps(steam_session, *, auto: bool = False) -> dict[int, str]:
         print_info("Saved to [cyan]config.yaml[/cyan] for next time.")
         try:
             with console.status("Fetching Steam app list…", spinner="dots"):
-                app_list = fetch_app_list(api_key)
+                app_list = fetch_app_list(api_key, user_agent=user_agent)
             print_success(f"Fetched {len(app_list)} apps")
         except Exception as e:
             print_error(f"IStoreService/GetAppList error: {e}")

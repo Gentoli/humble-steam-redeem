@@ -1,9 +1,0 @@
-cryptography>=42.0
-fuzzywuzzy>=0.18.0
-python-Levenshtein>=0.21.0
-requests>=2.31.0
-requests-futures>=1.0.0
-cloudscraper>=1.2.71
-rich>=13.0
-qrcode>=7.0
-InquirerPy>=0.3

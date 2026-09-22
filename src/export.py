@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
-from src.humble_api import redeem_humble_key
+from src.humble_api import filter_expiring_keys, redeem_humble_key
 from src.ownership import get_owned_apps, match_ownership
 from src.steam_auth import steam_login
 from src.utils import (
@@ -29,7 +30,14 @@ EXPORT_KEY_HEADERS = [
 ]
 
 
-def export_mode(humble_session, order_details: list[dict[str, Any]]) -> None:
+def export_mode(
+    humble_session,
+    order_details: list[dict[str, Any]],
+    *,
+    steam_cookies: str | Path | None = None,
+    user_agent: str | None = None,
+    only_expiring: bool = False,
+) -> None:
     """Interactive CSV export of Humble keys with optional Steam ownership info."""
     cls()
 
@@ -65,12 +73,22 @@ def export_mode(humble_session, order_details: list[dict[str, Any]]) -> None:
     )
 
     if steam_config:
-        steam_session = steam_login()
+        steam_session = steam_login(
+            cookies_file=steam_cookies, user_agent=user_agent
+        )
         if verify_logins_session(steam_session)[1]:
-            owned_app_details = get_owned_apps(steam_session)
+            owned_app_details = get_owned_apps(
+                steam_session, user_agent=user_agent
+            )
 
     desired_keys = "steam_app_id" if export_steam_only else "key_type_human_name"
     keylist = list(find_dict_keys(order_details, desired_keys, True))
+    if only_expiring:
+        original_length = len(keylist)
+        keylist = filter_expiring_keys(humble_session, order_details, keylist)
+        console.print(
+            f"[dim]Filtered {original_length - len(keylist)} keys without an expiry date.[/dim]"
+        )
 
     keys: list[dict] = []
     for tpk in keylist:

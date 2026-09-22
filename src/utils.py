@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import pickle
 import sys
+from http.cookiejar import MozillaCookieJar
 from pathlib import Path
 from typing import Any, Generator, Union
 
@@ -59,6 +60,41 @@ def export_cookies(cookie_file: Union[str, Path], session) -> bool:
         return True
     except Exception:
         return False
+
+
+def import_cookies(cookie_file: Union[str, Path], session, domain: str) -> bool:
+    """Load Netscape-format cookies for *domain* into *session*."""
+    try:
+        cookie_jar = MozillaCookieJar(str(cookie_file))
+        cookie_jar.load(ignore_discard=True, ignore_expires=True)
+    except Exception:
+        return False
+
+    target_domain = domain.lstrip(".").lower()
+    imported = False
+    for cookie in cookie_jar:
+        cookie_domain = (cookie.domain or "").lstrip(".").lower()
+        if (
+            cookie_domain != target_domain
+            and not (
+                "." in cookie_domain
+                and (
+                    cookie_domain.endswith(f".{target_domain}")
+                    or target_domain.endswith(f".{cookie_domain}")
+                )
+            )
+        ):
+            continue
+        session.cookies.set(
+            cookie.name,
+            cookie.value,
+            domain=cookie.domain,
+            path=cookie.path or "/",
+            secure=cookie.secure,
+            expires=cookie.expires,
+        )
+        imported = True
+    return imported
 
 
 def verify_logins_session(session) -> list[bool]:

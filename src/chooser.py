@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import sys
+import traceback
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 from InquirerPy import inquirer
@@ -17,7 +19,9 @@ from src.humble_api import (
     HUMBLE_HEADERS,
     HUMBLE_ORDER_DETAILS_API,
     HUMBLE_SUB_PAGE,
+    filter_expiring_keys,
     get_choices,
+    get_steam_expiration,
 )
 from src.redeemer import redeem_steam_keys
 from src.utils import (
@@ -28,6 +32,7 @@ from src.utils import (
     print_info,
     print_rule,
     print_success,
+    print_warning,
     prompt_yes_no,
 )
 
@@ -48,62 +53,270 @@ class _CountingCheckbox(CheckboxPrompt):
         return f"({n}/{self._max_selected} selected, space=toggle, enter=confirm)"
 
 
+def _choice_expiration(choice: dict[str, Any]) -> str | None:
+    """Return the expiry date from the Choice game's Steam key entry."""
+    return get_steam_expiration(choice)
+
+
+def _choice_label(choice: dict[str, Any]) -> str:
+    """Format a Choice game name, rating, and expiry for the game list."""
+    parts = [choice["title"]]
+    rating = choice.get("user_rating") or {}
+    review = rating.get("review_text")
+    pct = rating.get("steam_percent|decimal")
+    if review and pct is not None:
+        parts.append(f"  — {review.replace('_', ' ')} ({int(pct * 100)}%)")
+    elif review:
+        parts.append(f"  — {review.replace('_', ' ')}")
+    if "tpkds" not in choice:
+        parts.append("  [must redeem via Humble]")
+    expiration = _choice_expiration(choice)
+    parts.append(f"  — exp: {expiration or 'none'}")
+    return "".join(parts)
+
+
+def _log_full_response_error(
+    action: str,
+    response: Any,
+    error: BaseException,
+    *,
+    request_url: str | None = None,
+    request_headers: Any = None,
+    request_body: Any = None,
+) -> None:
+    """Write the complete request and response to the error log."""
+    request = getattr(response, "request", None)
+    method = getattr(request, "method", None) or "POST"
+    actual_url = getattr(request, "url", None) or request_url
+    actual_headers = getattr(request, "headers", None) or request_headers
+    actual_body = getattr(request, "body", None)
+    if actual_body is None:
+        actual_body = request_body
+    status = getattr(response, "status_code", "unknown")
+    url = getattr(response, "url", "unknown")
+    response_headers = getattr(response, "headers", {}) or {}
+    content_type = (
+        response_headers.get("Content-Type")
+        or response_headers.get("content-type")
+        or "unknown"
+    )
+    body = getattr(response, "text", "")
+    if not isinstance(body, str) or not body:
+        body = "<empty response body>"
+    traceback_text = traceback.format_exc()
+    if traceback_text == "NoneType: None\n":
+        traceback_text = ""
+    traceback_section = f"Traceback:\n{traceback_text}" if traceback_text else ""
+    print(
+        f"{action}: {error!r}\n"
+        f"Request: {method} {actual_url or 'unknown'}\n"
+        f"Request headers:\n{actual_headers or {}}\n"
+        f"Request body:\n{actual_body!r}\n"
+        "--- end request ---\n"
+        f"URL: {url}\n"
+        f"HTTP {status}, {content_type}\n"
+        f"Response body:\n{body}\n"
+        f"{traceback_section}\n"
+        "--- end response ---",
+        file=sys.stderr,
+    )
+
+
 def choose_games(
     humble_session,
     choice_month_name: str,
     identifier: str,
     chosen: list[dict[str, Any]],
+    *,
+    order_gamekey: str | None = None,
 ) -> list[str]:
-    """Submit chosen games for a Humble Choice month. Returns list of failed titles."""
+    """Submit chosen games in one batch request for a Humble Choice month.
+
+    The Choice endpoint expects the month's order gamekey, not the individual
+    game's reveal key. Returns a list of failed titles.
+    """
     failed: list[str] = []
+    base_headers = {
+        **HUMBLE_HEADERS,
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Referer": f"{HUMBLE_SUB_PAGE}{choice_month_name}",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    api_choices = [choice for choice in chosen if "tpkds" in choice]
     for choice in chosen:
         display_name = choice["display_item_machine_name"]
         if "tpkds" not in choice:
             url = f"{HUMBLE_SUB_PAGE}{choice_month_name}/{display_name}"
             console.print(f"[cyan]Open in browser:[/cyan] {url}")
             webbrowser.open(url)
-        else:
-            payload = {
-                "gamekey": choice["tpkds"][0]["gamekey"],
-                "parent_identifier": identifier,
-                "chosen_identifiers[]": display_name,
-                "is_multikey_and_from_choice_modal": "false",
-            }
-            try:
-                res = humble_session.post(
-                    HUMBLE_CHOOSE_CONTENT, data=payload, headers=HUMBLE_HEADERS
-                ).json()
-            except Exception as e:
-                print_error(f"Error choosing {escape(choice['title'])}: {e}")
-                print(
-                    f"choose_games exception for {choice['title']!r}: {e!r}",
-                    file=sys.stderr,
-                )
-                failed.append(choice["title"])
-                continue
-            if "success" not in res or not res["success"]:
-                print_error(f"Error choosing {escape(choice['title'])}")
-                console.print(res)
-                print(
-                    f"choose_games failure for {choice['title']!r}: {res!r}",
-                    file=sys.stderr,
-                )
-                failed.append(choice["title"])
-            else:
-                print_success(f"Chose game {escape(choice['title'])}")
+    if not api_choices:
+        return failed
+
+    payload = {
+        "gamekey": order_gamekey or api_choices[0]["tpkds"][0]["gamekey"],
+        "parent_identifier": identifier,
+        "chosen_identifiers[]": [
+            choice["display_item_machine_name"] for choice in api_choices
+        ],
+        "is_gift": "false",
+    }
+    request_headers = dict(base_headers)
+    response = None
+    try:
+        response = humble_session.post(
+            HUMBLE_CHOOSE_CONTENT, data=payload, headers=request_headers
+        )
+        res = response.json()
+    except ValueError as e:
+        status = getattr(response, "status_code", "unknown")
+        response_headers = getattr(response, "headers", {}) or {}
+        content_type = (
+            response_headers.get("Content-Type")
+            or response_headers.get("content-type")
+            or "unknown"
+        )
+        for choice in api_choices:
+            print_error(
+                f"Error choosing {escape(choice['title'])}: Humble returned "
+                f"a non-JSON response (HTTP {status}, {content_type})"
+            )
+            failed.append(choice["title"])
+        _log_full_response_error(
+            "choose_games non-JSON batch response",
+            response,
+            e,
+            request_url=HUMBLE_CHOOSE_CONTENT,
+            request_headers=request_headers,
+            request_body=payload,
+        )
+        return failed
+    except Exception as e:
+        for choice in api_choices:
+            print_error(f"Error choosing {escape(choice['title'])}: {e}")
+            failed.append(choice["title"])
+        _log_full_response_error(
+            "choose_games batch exception",
+            response,
+            e,
+            request_url=HUMBLE_CHOOSE_CONTENT,
+            request_headers=request_headers,
+            request_body=payload,
+        )
+        print(f"choose_games batch exception: {e!r}", file=sys.stderr)
+        return failed
+
+    already_chosen = (
+        isinstance(res, dict)
+        and not res.get("success")
+        and "You've already made this choice. Please refresh the page to see "
+        "your choice."
+        in str(res.get("errors", {}))
+    )
+    if isinstance(res, dict) and (res.get("success") or already_chosen):
+        for choice in api_choices:
+            print_success(f"Chose game {escape(choice['title'])}")
+        return failed
+
+    console.print(res)
+    for choice in api_choices:
+        print_error(f"Error choosing {escape(choice['title'])}")
+        print(
+            f"choose_games failure for {choice['title']!r}: {res!r}",
+            file=sys.stderr,
+        )
+        failed.append(choice["title"])
     return failed
 
 
+def _refresh_choice_order(humble_session, order: str) -> dict[str, Any] | None:
+    """Fetch refreshed order data, returning None when Humble did not send JSON."""
+    response = None
+    try:
+        response = humble_session.get(
+            f"{HUMBLE_ORDER_DETAILS_API}{order}?all_tpkds=true"
+        )
+        data = response.json()
+    except ValueError as e:
+        status = getattr(response, "status_code", "unknown")
+        response_headers = getattr(response, "headers", {}) or {}
+        content_type = (
+            response_headers.get("Content-Type")
+            or response_headers.get("content-type")
+            or "unknown"
+        )
+        message = (
+            f"Couldn't refresh Choice order {escape(order)}: Humble returned "
+            f"a non-JSON response (HTTP {status}, {content_type})"
+        )
+        print_error(message)
+        _log_full_response_error(
+            f"choice order refresh non-JSON response for {order!r}",
+            response,
+            e,
+        )
+        return None
+    except Exception as e:
+        print_error(f"Couldn't refresh Choice order {escape(order)}: {e}")
+        print(
+            f"choice order refresh exception for {order!r}: {e!r}",
+            file=sys.stderr,
+        )
+        return None
+
+    if not isinstance(data, dict):
+        print_error(f"Couldn't refresh Choice order {escape(order)}: invalid response")
+        print(
+            f"choice order refresh returned {data!r} for {order!r}",
+            file=sys.stderr,
+        )
+        return None
+    return data
+
+
 def humble_chooser_mode(
-    humble_session, order_details: list[dict[str, Any]]
+    humble_session,
+    order_details: list[dict[str, Any]],
+    *,
+    steam_cookies: str | Path | None = None,
+    user_agent: str | None = None,
+    only_expiring: bool = False,
+    start_bundle: str | None = None,
 ) -> None:
     """Interactive Humble Choice game selection UI."""
     try_redeem_keys: list[str] = []
-    months = get_choices(humble_session, order_details)
+    loading_status = None
+
+    def update_loading_status(message: str) -> None:
+        if loading_status is not None:
+            loading_status.update(message)
+
+    choice_months = iter(
+        get_choices(
+            humble_session,
+            order_details,
+            only_expiring=only_expiring,
+            start_bundle=start_bundle,
+            progress=update_loading_status,
+        )
+    )
     first = True
     redeem_keys = False
 
-    for month in months:
+    while True:
+        with console.status(
+            "Loading next Humble Choice month…", spinner="dots"
+        ) as status:
+            loading_status = status
+            try:
+                month = next(choice_months)
+            except StopIteration:
+                break
+            except ValueError as e:
+                print_error(str(e))
+                return
+            finally:
+                loading_status = None
+
         redeem_all = None
         if first:
             redeem_keys = prompt_yes_no(
@@ -126,7 +339,14 @@ def humble_chooser_mode(
             month_name = escape(month["product"]["human_name"])
             print_rule(f"{month_name}  ·  {label}")
 
+            def _label(choice: dict[str, Any]) -> str:
+                return _choice_label(choice)
+
             if redeem_all is None and remaining == len(choices):
+                console.print("[bold]Games:[/bold]")
+                for choice in choices:
+                    console.print(f"  {escape(_label(choice))}")
+                console.print()
                 redeem_all = prompt_yes_no("Redeem all?")
             else:
                 redeem_all = False
@@ -139,19 +359,6 @@ def humble_chooser_mode(
                     "[dim]Submit empty for more options (browser / skip).[/dim]"
                 )
                 console.print()
-
-                def _label(choice: dict[str, Any]) -> str:
-                    parts = [choice["title"]]
-                    rating = choice.get("user_rating") or {}
-                    review = rating.get("review_text")
-                    pct = rating.get("steam_percent|decimal")
-                    if review and pct is not None:
-                        parts.append(f"  — {review.replace('_', ' ')} ({int(pct * 100)}%)")
-                    elif review:
-                        parts.append(f"  — {review.replace('_', ' ')}")
-                    if "tpkds" not in choice:
-                        parts.append("  [must redeem via Humble]")
-                    return "".join(parts)
 
                 checkbox_choices = [
                     Choice(value=idx, name=_label(choice))
@@ -168,8 +375,7 @@ def humble_chooser_mode(
                         invalid_message=f"Pick at most {remaining}",
                     ).execute()
                 except KeyboardInterrupt:
-                    ready = True
-                    break
+                    raise
 
                 if not selected_indexes:
                     next_action = inquirer.select(
@@ -210,7 +416,11 @@ def humble_chooser_mode(
                 choice_month_name = month["product"]["choice_url"]
                 identifier = month["parent_identifier"]
                 failed = choose_games(
-                    humble_session, choice_month_name, identifier, chosen
+                    humble_session,
+                    choice_month_name,
+                    identifier,
+                    chosen,
+                    order_gamekey=month.get("gamekey"),
                 )
                 if failed:
                     print_error(
@@ -232,12 +442,32 @@ def humble_chooser_mode(
         if redeem_keys and try_redeem_keys:
             print_success("Redeeming keys now!")
             updated_monthlies = [
-                humble_session.get(
-                    f"{HUMBLE_ORDER_DETAILS_API}{order}?all_tpkds=true"
-                ).json()
+                refreshed
                 for order in try_redeem_keys
+                if (refreshed := _refresh_choice_order(humble_session, order))
+                is not None
             ]
-            chosen_keys = list(
-                find_dict_keys(updated_monthlies, "steam_app_id", True)
-            )
-            redeem_steam_keys(humble_session, chosen_keys)
+            if len(updated_monthlies) != len(try_redeem_keys):
+                print_warning(
+                    f"Couldn't refresh {len(try_redeem_keys) - len(updated_monthlies)} "
+                    "selected Choice order(s); continuing with the rest."
+                )
+            if updated_monthlies:
+                chosen_keys = list(
+                    find_dict_keys(updated_monthlies, "steam_app_id", True)
+                )
+                if only_expiring:
+                    original_length = len(chosen_keys)
+                    chosen_keys = filter_expiring_keys(
+                        humble_session, updated_monthlies, chosen_keys
+                    )
+                    print_info(
+                        f"Filtered {original_length - len(chosen_keys)} keys without "
+                        "an expiry date"
+                    )
+                redeem_steam_keys(
+                    humble_session,
+                    chosen_keys,
+                    steam_cookies=steam_cookies,
+                    user_agent=user_agent,
+                )

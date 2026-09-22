@@ -7,6 +7,7 @@ import io
 import secrets
 import sys
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
@@ -20,6 +21,7 @@ from src.utils import (
     STEAM_KEYS_PAGE,
     console,
     export_cookies,
+    import_cookies,
     print_error,
     print_info,
     print_rule,
@@ -368,10 +370,26 @@ def _credential_login(session: requests.Session) -> requests.Session:
         return _finalize_session(session, refresh_token)
 
 
-def steam_login(*, auto: bool = False) -> requests.Session:
+def steam_login(
+    *,
+    auto: bool = False,
+    cookies_file: str | Path | None = None,
+    user_agent: str | None = None,
+) -> requests.Session:
     """Sign into Steam web. Tries QR code first, falls back to credentials."""
     # Attempt to use saved session
     r = requests.Session()
+    if user_agent:
+        r.headers["User-Agent"] = user_agent
+    if cookies_file is not None:
+        if not import_cookies(cookies_file, r, "store.steampowered.com"):
+            print_error(f"Couldn't load Steam cookies from {cookies_file}")
+            sys.exit(1)
+        if not verify_logins_session(r)[1]:
+            print_error("Steam cookies are invalid or expired.")
+            sys.exit(1)
+        return r
+
     if try_recover_cookies(STEAM_COOKIE_FILE, r) and verify_logins_session(r)[1]:
         return r
 
@@ -383,6 +401,8 @@ def steam_login(*, auto: bool = False) -> requests.Session:
     print_rule("Steam Login")
 
     session = requests.Session()
+    if user_agent:
+        session.headers["User-Agent"] = user_agent
 
     # Try QR login first
     result = _try_qr_login(session)
